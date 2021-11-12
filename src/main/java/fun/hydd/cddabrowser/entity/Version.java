@@ -7,6 +7,8 @@ import java.util.Date;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Version {
+  public static final int EXPERIMENTAL = 0;
+  public static final int STABLE = 1;
   @JsonProperty("name")
   private String name;
   @JsonProperty("tag_name")
