@@ -11,18 +11,18 @@ public class ProcessUtil {
   private ProcessUtil() {
   }
 
-  /**
-   * @param processBuilder processBuilder
-   * @param vertx          current vertx
-   * @return no return
-   */
   public static Future<Void> execute(final ProcessBuilder processBuilder, final Vertx vertx) {
+    return execute(processBuilder, vertx, 4L, true);
+  }
+
+  public static Future<Void> execute(final ProcessBuilder processBuilder, final Vertx vertx, long timeout,
+                                     boolean order) {
     processBuilder.inheritIO();
     try {
       final Process process = processBuilder.start();
       return vertx.executeBlocking(voidPromise -> {
         try {
-          final boolean result = process.waitFor(4L, TimeUnit.MINUTES);
+          final boolean result = process.waitFor(timeout, TimeUnit.MINUTES);
           process.destroy();
           if (result) {
             voidPromise.complete();
@@ -31,13 +31,13 @@ public class ProcessUtil {
             for (final String command : processBuilder.command()) {
               stringBuilder.append(command).append("\n");
             }
-            voidPromise.fail("process execute fail\n" + stringBuilder);
+            voidPromise.fail("process execute fail,commands is\n" + stringBuilder + "exit code is " + process.exitValue());
           }
         } catch (final InterruptedException e) {
           voidPromise.fail(e);
           Thread.currentThread().interrupt();
         }
-      }, true);
+      }, order);
     } catch (final IOException e) {
       return Future.failedFuture(e);
     }
