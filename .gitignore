@@ -189,3 +189,5 @@ nbdist/
 
 ### Logger ##
 log/
+.idea/sonarlint.xml
+.idea/sonarlint-state.xml
