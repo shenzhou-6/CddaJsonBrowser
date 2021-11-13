@@ -8,6 +8,8 @@ import io.vertx.core.http.RequestOptions;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.mongo.FindOptions;
+import io.vertx.ext.mongo.MongoClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,7 @@ import java.util.regex.Pattern;
 
 public class VersionUtil {
   public static final String GITHUB_RELEASES_URL = "https://api.github.com/repos/CleverRaven/Cataclysm-DDA/releases";
+  public static final String COLLECTION_VERSIONS = "versions";
   private static final Logger logger = LoggerFactory.getLogger(VersionUtil.class);
 
   private VersionUtil() {
@@ -37,6 +40,29 @@ public class VersionUtil {
         logger.info("catchLatestVersion:\n" +
           "{}", Json.encodePrettily(version));
         return Future.succeededFuture(version);
+      });
+  }
+
+  public static Future<Version> findLatestVersionByBranch(final MongoClient mongoClient, final int branch) {
+    if (mongoClient == null) {
+      return Future.failedFuture("findLatestVersionByBranch(),mongoClient is null");
+    }
+    final JsonObject queryCondition = new JsonObject()
+      .put("branch", branch);
+    final FindOptions findOptions = new FindOptions()
+      .setSort(new JsonObject().put("created_at", -1))
+      .setLimit(1);
+    return mongoClient
+      .findWithOptions(COLLECTION_VERSIONS, queryCondition, findOptions)
+      .compose(jsonObjectList -> {
+        if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+          return Future.succeededFuture();
+        } else {
+          logger.info("findLatestVersionByBranch\n" +
+            "{}", jsonObjectList.get(0).encodePrettily());
+          final Version version = jsonObjectList.get(0).mapTo(Version.class);
+          return Future.succeededFuture(version);
+        }
       });
   }
 
