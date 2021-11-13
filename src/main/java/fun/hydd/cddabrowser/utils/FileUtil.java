@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 
 public class FileUtil {
   static final Logger logger = LoggerFactory.getLogger(FileUtil.class);
@@ -35,7 +37,8 @@ public class FileUtil {
     return "";
   }
 
-  private Future<Void> copyEnJsonFile(Vertx vertx, final String gameRootDirPath, final String translateGameDirPath) {
+  public static Future<Void> copyEnJsonFile(Vertx vertx, final String gameRootDirPath,
+                                            final String translateGameDirPath) {
     logger.info("start copyEnJsonFile,start:{},to:{}", gameRootDirPath,
       translateGameDirPath);
     final FileSystem fileSystem = vertx.fileSystem();
@@ -52,5 +55,20 @@ public class FileUtil {
     }
     return CompositeFuture.join(futureList)
       .compose(compositeFuture -> Future.succeededFuture());
+  }
+
+  public static <R> Future<Void> scanDirectory(List<File> fileList, Function<File, Future<R>> handler) {
+    if (fileList.isEmpty()) {
+      return Future.succeededFuture();
+    }
+    File directory = fileList.remove(0);
+    if (directory.isDirectory()) {
+      for (File file : Objects.requireNonNull(directory.listFiles())) {
+        if (file.isDirectory()) {
+          fileList.add(file);
+        }
+      }
+    }
+    return handler.apply(directory).compose(o -> scanDirectory(fileList, handler));
   }
 }
