@@ -2,7 +2,6 @@ package fun.hydd.cddabrowser.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import fun.hydd.cddabrowser.utils.JsonEntryUtil;
-import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -18,28 +17,23 @@ public class JsonEntry {
   private JsonObject data;
   private String mod;
 
-  public static Future<JsonEntry> generatedJsonEntry(final JsonObject data, final String language,
-                                                     final Version currentVersion, final String path) {
+  public JsonEntry() {
+  }
+
+  public JsonEntry(final JsonObject data, final String language,
+                   final Version version, final String path) {
     if (!data.containsKey("type")) {
-      return Future.failedFuture("generatedJsonEntry():no find type\n" +
-        data.encodePrettily());
+      return;
     }
-    final String id = JsonEntryUtil.parserId(data);
-    if (id == null) {
-      return Future.failedFuture("generatedJsonEntry():no find id\n" +
-        data.encodePrettily());
-    }
-    final JsonEntry jsonEntry = new JsonEntry();
-    jsonEntry.setData(data);
-    jsonEntry.setLanguage(language);
-    jsonEntry.setStartVersion(currentVersion);
-    jsonEntry.setEndVersion(currentVersion);
-    jsonEntry.setId(id);
-    jsonEntry.setOriginal(true);
-    jsonEntry.setType(data.getString("type"));
-    jsonEntry.setPath(path);
-    jsonEntry.setMod(JsonEntryUtil.parserModByPath(path));
-    return Future.succeededFuture(jsonEntry);
+    this.id = JsonEntryUtil.parserId(data);
+    this.type = data.getString("type");
+    this.isOriginal = true;
+    this.startVersion = version;
+    this.endVersion = version;
+    this.language = language;
+    this.path = path;
+    this.data = data;
+    this.mod = JsonEntryUtil.parserModByPath(path);
   }
 
   public String getCollectionName() {
