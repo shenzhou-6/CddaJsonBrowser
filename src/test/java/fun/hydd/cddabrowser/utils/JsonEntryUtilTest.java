@@ -101,4 +101,21 @@ class JsonEntryUtilTest {
     JsonObject result = JsonEntryUtil.generateBeforeVersionJsonEntryQuery(jsonEntry);
     assertThat(result.containsKey("endVersion.created_at")).isTrue();
   }
+
+  @Test
+  void generateInsertJsonEntryBulkOperation() {
+    assertThat(JsonEntryUtil.generateInsertJsonEntryBulkOperation(jsonEntry)).isNotNull();
+  }
+
+  @Test
+  void generateUpdateBeforeDBJsonEntryBulkOperation() {
+    Version version = new Version();
+    assertThat(JsonEntryUtil.generateUpdateBeforeDBJsonEntryBulkOperation(jsonEntry, version)).isNotNull();
+  }
+
+  @Test
+  void generateUpdateAfterDBJsonEntryBulkOperation() {
+    Version version = new Version();
+    assertThat(JsonEntryUtil.generateUpdateAfterDBJsonEntryBulkOperation(jsonEntry, version)).isNotNull();
+  }
 }

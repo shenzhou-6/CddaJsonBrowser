@@ -3,6 +3,7 @@ package fun.hydd.cddabrowser.utils;
 import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.mongo.BulkOperation;
 
 import java.io.File;
 
@@ -86,5 +87,25 @@ public class JsonEntryUtil {
     } else {
       return "dda";
     }
+  }
+
+  public static BulkOperation generateInsertJsonEntryBulkOperation(final JsonEntry jsonEntry) {
+    return BulkOperation.createInsert(JsonObject.mapFrom(jsonEntry));
+  }
+
+  public static BulkOperation generateUpdateBeforeDBJsonEntryBulkOperation(final JsonEntry jsonEntry,
+                                                                           final Version newVersion) {
+    final JsonObject queryCondition = JsonObject.mapFrom(jsonEntry);
+    final JsonObject update = new JsonObject()
+      .put("endVersion", JsonObject.mapFrom(newVersion));
+    return BulkOperation.createUpdate(queryCondition, update);
+  }
+
+  public static BulkOperation generateUpdateAfterDBJsonEntryBulkOperation(final JsonEntry jsonEntry,
+                                                                          final Version newVersion) {
+    final JsonObject queryCondition = JsonObject.mapFrom(jsonEntry);
+    final JsonObject update = new JsonObject()
+      .put("startVersion", JsonObject.mapFrom(newVersion));
+    return BulkOperation.createUpdate(queryCondition, update);
   }
 }
