@@ -10,10 +10,38 @@ import io.vertx.core.http.RequestOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+
 public class HttpUtil {
   public static final Logger logger = LoggerFactory.getLogger(HttpUtil.class);
 
   private HttpUtil() {
+  }
+
+  public static Future<String> downloadFile(Vertx vertx, String url, String target) {
+    final File file = new File(target);
+    if (file.exists()) {
+      try {
+        Files.delete(file.toPath());
+      } catch (final IOException e) {
+        return Future.failedFuture(e);
+      }
+    }
+    if (!file.getParentFile().exists()) {
+      logger.info("mkdirs is {}", file.getParentFile().mkdirs());
+    }
+    return request(vertx, new RequestOptions().setAbsoluteURI(url))
+      .compose(buffer -> vertx.fileSystem().writeFile(target, buffer))
+      .compose(unused -> Future.succeededFuture(target))
+      .onSuccess(s -> logger.info("success downloadFile:{}", s))
+      .recover(throwable -> {
+        logger.error("download file is fail\n" +
+          "\tdownload url is {}\n", url);
+        logger.error("download is fail", throwable);
+        return Future.failedFuture(throwable);
+      });
   }
 
   public static Future<Buffer> request(Vertx vertx, RequestOptions requestOptions) {
