@@ -1,5 +1,6 @@
 package fun.hydd.cddabrowser.utils;
 
+import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.json.JsonObject;
 
@@ -8,6 +9,34 @@ import java.io.File;
 public class JsonEntryUtil {
 
   private JsonEntryUtil() {
+  }
+
+  public static JsonObject generateCurrentEffectiveVersionJsonEntryQuery(final JsonEntry jsonEntry) {
+    return generateEqualJsonEntryQuery(jsonEntry)
+      .put("startVersion.created_at", new JsonObject()
+        .put("$lte", jsonEntry.getStartVersion().getCreatedAt()))
+      .put("endVersion.created_at", new JsonObject()
+        .put("$gte", jsonEntry.getEndVersion().getCreatedAt()));
+  }
+
+  public static JsonObject generateAfterVersionJsonEntryQuery(final JsonEntry jsonEntry) {
+    return generateEqualJsonEntryQuery(jsonEntry)
+      .put("startVersion.created_at", new JsonObject()
+        .put("$gt", jsonEntry.getEndVersion().getCreatedAt()));
+  }
+
+  public static JsonObject generateBeforeVersionJsonEntryQuery(final JsonEntry jsonEntry) {
+    return generateEqualJsonEntryQuery(jsonEntry)
+      .put("endVersion.created_at", new JsonObject()
+        .put("$lt", jsonEntry.getStartVersion().getCreatedAt()));
+  }
+
+  public static JsonObject generateEqualJsonEntryQuery(JsonEntry jsonEntry) {
+    return new JsonObject()
+      .put("id", jsonEntry.getId())
+      .put("type", jsonEntry.getType())
+      .put("language", jsonEntry.getLanguage())
+      .put("path", jsonEntry.getPath());
   }
 
   public static String parserId(JsonObject data) {

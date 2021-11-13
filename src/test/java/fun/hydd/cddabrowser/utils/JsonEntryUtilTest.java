@@ -1,11 +1,36 @@
 package fun.hydd.cddabrowser.utils;
 
+import fun.hydd.cddabrowser.entity.JsonEntry;
+import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.json.JsonObject;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class JsonEntryUtilTest {
+  final static JsonEntry jsonEntry = new JsonEntry();
+
+  @BeforeAll
+  static void setup() {
+    Version version = new Version();
+    version.setName("test name");
+    version.setTagName("test tag");
+    version.setBranch(Version.EXPERIMENTAL);
+    version.setTargetCommitish("test commit");
+    version.setCreatedAt(new Date());
+    jsonEntry.setData(new JsonObject());
+    jsonEntry.setStartVersion(version);
+    jsonEntry.setEndVersion(version);
+    jsonEntry.setId("test id");
+    jsonEntry.setLanguage("en");
+    jsonEntry.setMod("test mod");
+    jsonEntry.setOriginal(true);
+    jsonEntry.setPath("test path");
+    jsonEntry.setType("test type");
+  }
 
   @Test
   void parserModByPath() {
@@ -44,5 +69,36 @@ class JsonEntryUtilTest {
     assertThat(JsonEntryUtil.parserId(jsonObject1)).isEqualTo("testId1");
     assertThat(JsonEntryUtil.parserId(jsonObject2)).isEqualTo("testId2");
     assertThat(JsonEntryUtil.parserId(jsonObject3)).isEqualTo("testId3");
+  }
+
+  @Test
+  void generateEqualJsonEntryQuery() {
+    JsonObject result = JsonEntryUtil.generateEqualJsonEntryQuery(jsonEntry);
+    assertThat(result).isEqualTo(new JsonObject()
+      .put("id", jsonEntry.getId())
+      .put("type", jsonEntry.getType())
+      .put("language", jsonEntry.getLanguage())
+      .put("path", jsonEntry.getPath()
+      )
+    );
+  }
+
+  @Test
+  void generateCurrentEffectiveVersionJsonEntryQuery() {
+    JsonObject result = JsonEntryUtil.generateCurrentEffectiveVersionJsonEntryQuery(jsonEntry);
+    assertThat(result.containsKey("startVersion.created_at")).isTrue();
+    assertThat(result.containsKey("endVersion.created_at")).isTrue();
+  }
+
+  @Test
+  void generateAfterVersionJsonEntryQuery() {
+    JsonObject result = JsonEntryUtil.generateAfterVersionJsonEntryQuery(jsonEntry);
+    assertThat(result.containsKey("startVersion.created_at")).isTrue();
+  }
+
+  @Test
+  void generateBeforeVersionJsonEntryQuery() {
+    JsonObject result = JsonEntryUtil.generateBeforeVersionJsonEntryQuery(jsonEntry);
+    assertThat(result.containsKey("endVersion.created_at")).isTrue();
   }
 }
