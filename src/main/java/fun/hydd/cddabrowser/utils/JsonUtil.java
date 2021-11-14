@@ -33,4 +33,12 @@ public class JsonUtil {
   public static boolean isEmpty(JsonObject jsonObject) {
     return jsonObject == null || jsonObject.isEmpty();
   }
+
+  public static boolean isNotEmpty(JsonArray jsonArray) {
+    return !isEmpty(jsonArray);
+  }
+
+  public static boolean isEmpty(JsonArray jsonArray) {
+    return jsonArray == null || jsonArray.isEmpty();
+  }
 }

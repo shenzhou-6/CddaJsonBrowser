@@ -48,4 +48,30 @@ public class JsonUtilTest {
     assertThat(JsonUtil.isEmpty(jsonObjectBlank)).isFalse();
     assertThat(JsonUtil.isEmpty(jsonObjectTrue)).isFalse();
   }
+
+  @Test
+  void isEmptyJsonArray() {
+    JsonArray jsonArrayNull = null;
+    JsonArray jsonArrayEmpty = new JsonArray();
+    JsonArray jsonArrayBlank = new JsonArray().add("");
+    JsonArray jsonArrayTrue = new JsonArray().add("test");
+
+    assertThat(JsonUtil.isEmpty(jsonArrayNull)).isTrue();
+    assertThat(JsonUtil.isEmpty(jsonArrayEmpty)).isTrue();
+    assertThat(JsonUtil.isEmpty(jsonArrayBlank)).isFalse();
+    assertThat(JsonUtil.isEmpty(jsonArrayTrue)).isFalse();
+  }
+
+  @Test
+  void isNotEmptyJsonArray() {
+    JsonArray jsonArrayNull = null;
+    JsonArray jsonArrayEmpty = new JsonArray();
+    JsonArray jsonArrayBlank = new JsonArray().add("");
+    JsonArray jsonArrayTrue = new JsonArray().add("test");
+
+    assertThat(JsonUtil.isNotEmpty(jsonArrayNull)).isFalse();
+    assertThat(JsonUtil.isNotEmpty(jsonArrayEmpty)).isFalse();
+    assertThat(JsonUtil.isNotEmpty(jsonArrayBlank)).isTrue();
+    assertThat(JsonUtil.isNotEmpty(jsonArrayTrue)).isTrue();
+  }
 }
