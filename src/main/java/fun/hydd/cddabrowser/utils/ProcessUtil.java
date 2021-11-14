@@ -55,7 +55,7 @@ public class ProcessUtil {
       .onSuccess(event -> logger.info("unzip {} success", zipFilePath));
   }
 
-  private Future<Void> compileMo(Vertx vertx, String gameDirPath) {
+  public static Future<Void> compileMo(Vertx vertx, String gameDirPath) {
     final String compileMoShell = gameDirPath + "/lang/compile_mo.sh";
     final ProcessBuilder processBuilder = new ProcessBuilder("sh", compileMoShell);
     processBuilder.directory(new File(gameDirPath));
@@ -63,8 +63,8 @@ public class ProcessUtil {
       .onSuccess(event -> logger.info("compileMo success,game dir is {}", gameDirPath));
   }
 
-  private Future<Void> translateJsonFile(Vertx vertx, String translatePythonShellPath, String gameDirPath,
-                                         String translateDirPath) {
+  public static Future<Void> translateJsonFile(Vertx vertx, String translatePythonShellPath, String gameDirPath,
+                                               String translateDirPath) {
     logger.info("start translate,translate python shell is {}", translatePythonShellPath);
     final ProcessBuilder processBuilder = new ProcessBuilder("python", translatePythonShellPath, "-o",
       translateDirPath);

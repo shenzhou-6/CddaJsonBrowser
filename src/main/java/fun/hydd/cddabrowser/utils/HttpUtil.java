@@ -16,6 +16,8 @@ import java.nio.file.Files;
 
 public class HttpUtil {
   public static final Logger logger = LoggerFactory.getLogger(HttpUtil.class);
+  public static final String GITHUB_DOWNLOAD_SOURCE_ZIP_URL_PREFIX = "https://codeload.github.com/" +
+    "CleverRaven/Cataclysm-DDA/zip/refs/tags/";
 
   private HttpUtil() {
   }

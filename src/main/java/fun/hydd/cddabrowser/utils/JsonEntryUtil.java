@@ -2,14 +2,120 @@ package fun.hydd.cddabrowser.utils;
 
 import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.BulkOperation;
+import io.vertx.ext.mongo.MongoClient;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class JsonEntryUtil {
 
   private JsonEntryUtil() {
+  }
+
+  public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryListByJsonObjectList(MongoClient mongoClient,
+                                                                                                 List<JsonObject> jsonObjectList) {
+    List<JsonEntry> jsonEntryList = new ArrayList<>();
+    for (JsonObject jsonObject : jsonObjectList) {
+      jsonEntryList.add(jsonObject.mapTo(JsonEntry.class));
+    }
+    return processNewJsonEntryList(mongoClient, jsonEntryList);
+  }
+
+  public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryList(MongoClient mongoClient,
+                                                                                 List<JsonEntry> jsonEntryList) {
+    Map<String, List<BulkOperation>> bulkOperationListMap = new HashMap<>();
+    //noinspection rawtypes
+    List<Future> futureList = new ArrayList<>();
+    for (JsonEntry jsonEntry : jsonEntryList) {
+      futureList.add(processNewJsonEntry(mongoClient, jsonEntry)
+        .onSuccess(bulkOperation -> {
+          final String collectionName = jsonEntry.getCollectionName();
+          if (bulkOperationListMap.containsKey(collectionName)) {
+            bulkOperationListMap.get(collectionName).add(bulkOperation);
+          } else {
+            bulkOperationListMap.put(collectionName, List.of(bulkOperation));
+          }
+        }));
+    }
+    return CompositeFuture.all(futureList)
+      .compose(compositeFuture -> Future.succeededFuture(bulkOperationListMap));
+  }
+
+  public static Future<BulkOperation> processNewJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry) {
+    return judgeCurrentEffectiveVersionJsonEntry(mongoClient, null, jsonEntry)
+      .compose(bulkOperation -> judgeAfterVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry))
+      .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry));
+  }
+
+  public static Future<BulkOperation> judgeCurrentEffectiveVersionJsonEntry(MongoClient mongoClient,
+                                                                            BulkOperation bulkOperation,
+                                                                            JsonEntry jsonEntry) {
+    if (bulkOperation != null) {
+      return Future.succeededFuture(bulkOperation);
+    }
+    JsonObject queryCondition = generateCurrentEffectiveVersionJsonEntryQuery(jsonEntry);
+    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+      .compose(jsonObject -> {
+        if (JsonUtil.isNotEmpty(jsonObject)) {
+          JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
+          if (!dbJsonEntry.getData().equals(jsonEntry.getData()) &&
+            dbJsonEntry.getEndVersion().equals(dbJsonEntry.getStartVersion())) {
+            return Future.succeededFuture(generateReplaceJsonEntryBulkOperation(dbJsonEntry, jsonEntry));
+          }
+        }
+        return Future.succeededFuture();
+      });
+  }
+
+  public static Future<BulkOperation> judgeAfterVersionVersionJsonEntry(MongoClient mongoClient,
+                                                                        BulkOperation bulkOperation,
+                                                                        JsonEntry jsonEntry) {
+    if (bulkOperation != null) {
+      return Future.succeededFuture(bulkOperation);
+    }
+    JsonObject queryCondition = generateAfterVersionJsonEntryQuery(jsonEntry);
+    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+      .compose(jsonObject -> {
+        if (JsonUtil.isNotEmpty(jsonObject)) {
+          JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
+          if (dbJsonEntry.getData().equals(jsonEntry.getData())) {
+            return Future.succeededFuture(generateUpdateAfterDBJsonEntryBulkOperation(dbJsonEntry,
+              jsonEntry.getEndVersion()));
+          } else {
+            return Future.succeededFuture(generateInsertJsonEntryBulkOperation(jsonEntry));
+          }
+        }
+        return Future.succeededFuture();
+      });
+  }
+
+  public static Future<BulkOperation> judgeBeforeVersionVersionJsonEntry(MongoClient mongoClient,
+                                                                         BulkOperation bulkOperation,
+                                                                         JsonEntry jsonEntry) {
+    if (bulkOperation != null) {
+      return Future.succeededFuture(bulkOperation);
+    }
+    JsonObject queryCondition = generateBeforeVersionJsonEntryQuery(jsonEntry);
+    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+      .compose(jsonObject -> {
+        if (JsonUtil.isNotEmpty(jsonObject)) {
+          JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
+          if (dbJsonEntry.getData().equals(jsonEntry.getData())) {
+            return Future.succeededFuture(generateUpdateBeforeDBJsonEntryBulkOperation(dbJsonEntry,
+              jsonEntry.getStartVersion()));
+          } else {
+            return Future.succeededFuture(generateInsertJsonEntryBulkOperation(jsonEntry));
+          }
+        }
+        return Future.succeededFuture();
+      });
   }
 
   public static JsonObject generateCurrentEffectiveVersionJsonEntryQuery(final JsonEntry jsonEntry) {
@@ -91,6 +197,10 @@ public class JsonEntryUtil {
 
   public static BulkOperation generateInsertJsonEntryBulkOperation(final JsonEntry jsonEntry) {
     return BulkOperation.createInsert(JsonObject.mapFrom(jsonEntry));
+  }
+
+  public static BulkOperation generateReplaceJsonEntryBulkOperation(JsonEntry dbJsonEntry, JsonEntry newJsonEntry) {
+    return BulkOperation.createReplace(JsonObject.mapFrom(dbJsonEntry), JsonObject.mapFrom(newJsonEntry));
   }
 
   public static BulkOperation generateUpdateBeforeDBJsonEntryBulkOperation(final JsonEntry jsonEntry,

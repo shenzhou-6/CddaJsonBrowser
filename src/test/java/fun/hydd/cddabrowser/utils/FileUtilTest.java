@@ -31,7 +31,7 @@ class FileUtilTest {
     File[] unzipGameDirFiles = new File[]{unzipGameDirFile};
     when(unzipDirFile.listFiles()).thenReturn(unzipGameDirFiles);
 
-    String result = FileUtil.findUnzipGameDirPathByUnzipDir(unzipDirFile);
+    String result = FileUtil.findGameRootDirPath(unzipDirFile);
 
     assertThat(result).isEqualTo("test unzipGameDirFile");
   }
