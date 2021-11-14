@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Date;
+import java.util.Objects;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Version {
@@ -58,5 +59,18 @@ public class Version {
 
   public void setCreatedAt(final Date createdAt) {
     this.createdAt = createdAt;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    Version version = (Version) o;
+    return branch == version.branch && Objects.equals(name, version.name) && Objects.equals(tagName, version.tagName) && Objects.equals(targetCommitish, version.targetCommitish) && Objects.equals(createdAt, version.createdAt);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(name, tagName, targetCommitish, branch, createdAt);
   }
 }
