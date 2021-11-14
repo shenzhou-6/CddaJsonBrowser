@@ -26,6 +26,14 @@ public class JsonUtil {
     return jsonObjects;
   }
 
+  public static List<JsonObject> convertJsonArray(JsonArray jsonArray) {
+    final List<JsonObject> jsonObjectList = new ArrayList<>();
+    for (int i = 0; i < jsonArray.size(); i++) {
+      jsonObjectList.add(jsonArray.getJsonObject(i));
+    }
+    return jsonObjectList;
+  }
+
   public static boolean isNotEmpty(JsonObject jsonObject) {
     return !isEmpty(jsonObject);
   }

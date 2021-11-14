@@ -74,4 +74,21 @@ public class JsonUtilTest {
     assertThat(JsonUtil.isNotEmpty(jsonArrayBlank)).isTrue();
     assertThat(JsonUtil.isNotEmpty(jsonArrayTrue)).isTrue();
   }
+
+  @Test
+  void convertJsonArray() {
+    JsonArray jsonArray = new JsonArray();
+    JsonArray jsonArray1 = new JsonArray()
+      .add(new JsonObject())
+      .add(new JsonObject().put("test", "test"));
+    JsonArray jsonArray2 = new JsonArray()
+      .add(new JsonObject());
+    JsonArray jsonArray3 = new JsonArray()
+      .add(new JsonArray());
+
+    assertThat(JsonUtil.convertJsonArray(jsonArray)).hasSize(0);
+    assertThat(JsonUtil.convertJsonArray(jsonArray1)).hasSize(2);
+    assertThat(JsonUtil.convertJsonArray(jsonArray2)).hasSize(1);
+    assertThat(JsonUtil.convertJsonArray(jsonArray2)).hasSize(1);
+  }
 }
