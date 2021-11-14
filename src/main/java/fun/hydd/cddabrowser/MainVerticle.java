@@ -52,7 +52,7 @@ public class MainVerticle extends AbstractVerticle {
       .compose(unused -> this.processOriginalJsonData())
       .onSuccess(unused -> logger.info("SAVE VERSION"))
       .onFailure(throwable -> {
-        if (throwable.getMessage().startsWith("no need update")) {
+        if (throwable instanceof NoNeedUpdateException) {
           this.logger.warn(throwable.getMessage());
         } else {
           this.logger.error("TimedUpdateVersion() is fail:", throwable);
