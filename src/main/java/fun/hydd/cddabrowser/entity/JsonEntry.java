@@ -112,4 +112,18 @@ public class JsonEntry {
     this.path = path;
   }
 
+  @Override
+  public String toString() {
+    return "JsonEntry{" +
+      "id='" + id + '\'' +
+      ", type='" + type + '\'' +
+      ", isOriginal=" + isOriginal +
+      ", startVersion=" + startVersion +
+      ", endVersion=" + endVersion +
+      ", language='" + language + '\'' +
+      ", path='" + path + '\'' +
+      ", data=" + data +
+      ", mod='" + mod + '\'' +
+      '}';
+  }
 }
