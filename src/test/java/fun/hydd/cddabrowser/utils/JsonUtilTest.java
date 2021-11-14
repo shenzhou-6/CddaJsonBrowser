@@ -22,4 +22,30 @@ public class JsonUtilTest {
       .hasSize(1)
       .contains(jsonObject);
   }
+
+  @Test
+  void isNotEmpty() {
+    JsonObject jsonObjectNull = null;
+    JsonObject jsonObjectEmpty = new JsonObject();
+    JsonObject jsonObjectBlank = new JsonObject().put("", "");
+    JsonObject jsonObjectTrue = new JsonObject().put("test", "test");
+
+    assertThat(JsonUtil.isNotEmpty(jsonObjectNull)).isFalse();
+    assertThat(JsonUtil.isNotEmpty(jsonObjectEmpty)).isFalse();
+    assertThat(JsonUtil.isNotEmpty(jsonObjectBlank)).isTrue();
+    assertThat(JsonUtil.isNotEmpty(jsonObjectTrue)).isTrue();
+  }
+
+  @Test
+  void isEmpty() {
+    JsonObject jsonObjectNull = null;
+    JsonObject jsonObjectEmpty = new JsonObject();
+    JsonObject jsonObjectBlank = new JsonObject().put("", "");
+    JsonObject jsonObjectTrue = new JsonObject().put("test", "test");
+
+    assertThat(JsonUtil.isEmpty(jsonObjectNull)).isTrue();
+    assertThat(JsonUtil.isEmpty(jsonObjectEmpty)).isTrue();
+    assertThat(JsonUtil.isEmpty(jsonObjectBlank)).isFalse();
+    assertThat(JsonUtil.isEmpty(jsonObjectTrue)).isFalse();
+  }
 }

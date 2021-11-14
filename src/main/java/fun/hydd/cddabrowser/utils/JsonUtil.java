@@ -25,4 +25,12 @@ public class JsonUtil {
     }
     return jsonObjects;
   }
+
+  public static boolean isNotEmpty(JsonObject jsonObject) {
+    return !isEmpty(jsonObject);
+  }
+
+  public static boolean isEmpty(JsonObject jsonObject) {
+    return jsonObject == null || jsonObject.isEmpty();
+  }
 }
