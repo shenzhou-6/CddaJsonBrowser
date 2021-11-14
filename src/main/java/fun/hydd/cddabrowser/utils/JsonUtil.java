@@ -10,6 +10,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class JsonUtil {
+  public static final String INHERIT_FIELD_COPY_FROM = "copy-from";
+  public static final String INHERIT_FIELD_ABSTRACT = "abstract";
+  public static final String INHERIT_FIELD_EXTEND = "extend";
+  public static final String INHERIT_FIELD_RELATIVE = "relative";
+  public static final String INHERIT_FIELD_PROPORTIONAL = "proportional";
+  public static final String INHERIT_FIELD_DELETE = "delete";
   static final Logger logger = LoggerFactory.getLogger(JsonUtil.class);
 
   private JsonUtil() {

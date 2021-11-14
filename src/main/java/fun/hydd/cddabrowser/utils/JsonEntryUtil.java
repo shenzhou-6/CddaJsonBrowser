@@ -4,19 +4,127 @@ import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.BulkOperation;
+import io.vertx.ext.mongo.FindOptions;
 import io.vertx.ext.mongo.MongoClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class JsonEntryUtil {
+  public static final String START_VERSION_CREATED_AT = "startVersion.created_at";
+  public static final String END_VERSION_CREATED_AT = "endVersion.created_at";
+  public static final String NO_FIND_ANY_JSON_ENTRY = "no find any JsonEntry";
+  static final Logger logger = LoggerFactory.getLogger(JsonEntryUtil.class);
 
   private JsonEntryUtil() {
+  }
+
+  public static Future<List<JsonEntry>> processInheritJsonObject(MongoClient mongoClient,
+                                                                 List<JsonEntry> jsonEntryList) {
+    @SuppressWarnings("rawtypes") List<Future> futureList = new ArrayList<>();
+    List<JsonEntry> newJsonEntryList = new ArrayList<>();
+    for (JsonEntry jsonEntry : jsonEntryList) {
+      futureList.add(processInheritJsonObject(mongoClient, jsonEntry)
+        .onSuccess(newJsonEntryList::add));
+    }
+    return CompositeFuture.all(futureList)
+      .compose(compositeFuture -> Future.succeededFuture(newJsonEntryList));
+  }
+
+  public static Future<JsonEntry> processInheritJsonObject(MongoClient mongoClient, JsonEntry jsonEntry) {
+    JsonObject data = jsonEntry.getData();
+    jsonEntry.setOriginal(false);
+    if (!data.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
+      return Future.succeededFuture(jsonEntry);
+    }
+    String copyFrom = data.getString(JsonUtil.INHERIT_FIELD_COPY_FROM);
+    JsonObject query = new JsonObject()
+      .put("id", copyFrom);
+    return getCurrentEffectiveJsonEntry(mongoClient, query, jsonEntry.getCollectionName())
+      .compose(jsonObject -> {
+        if (JsonUtil.isEmpty(jsonObject)) {
+          logger.warn("no find copy from json entry,\n{}", jsonEntry);
+        } else {
+          JsonObject superData = jsonObject.getJsonObject("data");
+          jsonEntry.setData(processInheritJsonObject(data, superData));
+        }
+        return Future.succeededFuture(jsonEntry);
+      });
+  }
+
+  public static JsonObject processInheritJsonObject(JsonObject data, JsonObject superData) {
+    superData.remove(JsonUtil.INHERIT_FIELD_ABSTRACT);
+    if (data.containsKey(JsonUtil.INHERIT_FIELD_EXTEND)) {
+      JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_EXTEND);
+      for (Map.Entry<String, Object> entry : jsonObject) {
+        final String key = entry.getKey();
+        JsonArray oldJsonArray = superData.getJsonArray(key);
+        JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
+        for (Object object : newJsonArray) {
+          oldJsonArray.add(object);
+        }
+        superData.put(key, oldJsonArray);
+      }
+      data.remove(JsonUtil.INHERIT_FIELD_EXTEND);
+    }
+    if (data.containsKey(JsonUtil.INHERIT_FIELD_DELETE)) {
+      JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_DELETE);
+      for (Map.Entry<String, Object> entry : jsonObject) {
+        final String key = entry.getKey();
+        JsonArray oldJsonArray = superData.getJsonArray(key);
+        JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
+        for (Object object : newJsonArray) {
+          oldJsonArray.remove(object);
+        }
+        superData.put(key, oldJsonArray);
+      }
+      data.remove(JsonUtil.INHERIT_FIELD_DELETE);
+    }
+    if (data.containsKey(JsonUtil.INHERIT_FIELD_RELATIVE)) {
+      JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_RELATIVE);
+      for (Map.Entry<String, Object> entry : jsonObject) {
+        final String key = entry.getKey();
+        superData.put(key, superData.getFloat(key) + Double.parseDouble(String.valueOf(entry.getValue())));
+      }
+      data.remove(JsonUtil.INHERIT_FIELD_RELATIVE);
+    }
+    if (data.containsKey(JsonUtil.INHERIT_FIELD_PROPORTIONAL)) {
+      JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_PROPORTIONAL);
+      for (Map.Entry<String, Object> entry : jsonObject) {
+        final String key = entry.getKey();
+        superData.put(key, superData.getFloat(key) * Double.parseDouble(String.valueOf(entry.getValue())));
+      }
+      data.remove(JsonUtil.INHERIT_FIELD_PROPORTIONAL);
+    }
+    for (Map.Entry<String, Object> entry : data) {
+      superData.put(entry.getKey(), entry.getValue());
+    }
+    return superData;
+  }
+
+  public static Future<List<JsonObject>> getNeedProcessInheritJsonObject(MongoClient mongoClient, String collection,
+                                                                         Version version) {
+    JsonObject query = new JsonObject()
+      .put("endVersion", JsonObject.mapFrom(version));
+    return mongoClient.find(collection, query);
+  }
+
+  public static Future<List<String>> getAllOriginalCollection(MongoClient mongoClient) {
+    return mongoClient.getCollections()
+      .compose(strings ->
+        Future.succeededFuture(
+          strings.stream().filter(s -> s.endsWith("_original")).collect(Collectors.toList())
+        )
+      );
   }
 
   public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryListByJsonObjectList(MongoClient mongoClient,
@@ -54,6 +162,54 @@ public class JsonEntryUtil {
       .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry));
   }
 
+  public static Future<JsonObject> getCurrentEffectiveJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+                                                                String collection) {
+    final FindOptions findOptions = new FindOptions()
+      .setSort(new JsonObject().put(START_VERSION_CREATED_AT, -1))
+      .setLimit(1);
+    return mongoClient
+      .findWithOptions(collection, queryCondition, findOptions)
+      .compose(jsonObjectList -> {
+        if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+        } else {
+          return Future.succeededFuture(jsonObjectList.get(0));
+        }
+      });
+  }
+
+  public static Future<JsonObject> getAfterJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+                                                     String collection) {
+    final FindOptions findOptions = new FindOptions()
+      .setSort(new JsonObject().put(START_VERSION_CREATED_AT, 1))
+      .setLimit(1);
+    return mongoClient
+      .findWithOptions(collection, queryCondition, findOptions)
+      .compose(jsonObjectList -> {
+        if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+        } else {
+          return Future.succeededFuture(jsonObjectList.get(0));
+        }
+      });
+  }
+
+  public static Future<JsonObject> getBeforeJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+                                                      String collection) {
+    final FindOptions findOptions = new FindOptions()
+      .setSort(new JsonObject().put(END_VERSION_CREATED_AT, -1))
+      .setLimit(1);
+    return mongoClient
+      .findWithOptions(collection, queryCondition, findOptions)
+      .compose(jsonObjectList -> {
+        if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+        } else {
+          return Future.succeededFuture(jsonObjectList.get(0));
+        }
+      });
+  }
+
   public static Future<BulkOperation> judgeCurrentEffectiveVersionJsonEntry(MongoClient mongoClient,
                                                                             BulkOperation bulkOperation,
                                                                             JsonEntry jsonEntry) {
@@ -61,7 +217,7 @@ public class JsonEntryUtil {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateCurrentEffectiveVersionJsonEntryQuery(jsonEntry);
-    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+    return getCurrentEffectiveJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
@@ -81,7 +237,7 @@ public class JsonEntryUtil {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateAfterVersionJsonEntryQuery(jsonEntry);
-    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+    return getAfterJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
@@ -103,7 +259,7 @@ public class JsonEntryUtil {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateBeforeVersionJsonEntryQuery(jsonEntry);
-    return mongoClient.findOne(jsonEntry.getCollectionName(), queryCondition, new JsonObject())
+    return getBeforeJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
@@ -120,21 +276,21 @@ public class JsonEntryUtil {
 
   public static JsonObject generateCurrentEffectiveVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
-      .put("startVersion.created_at", new JsonObject()
+      .put(START_VERSION_CREATED_AT, new JsonObject()
         .put("$lte", jsonEntry.getStartVersion().getCreatedAt()))
-      .put("endVersion.created_at", new JsonObject()
+      .put(END_VERSION_CREATED_AT, new JsonObject()
         .put("$gte", jsonEntry.getEndVersion().getCreatedAt()));
   }
 
   public static JsonObject generateAfterVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
-      .put("startVersion.created_at", new JsonObject()
+      .put(START_VERSION_CREATED_AT, new JsonObject()
         .put("$gt", jsonEntry.getEndVersion().getCreatedAt()));
   }
 
   public static JsonObject generateBeforeVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
-      .put("endVersion.created_at", new JsonObject()
+      .put(END_VERSION_CREATED_AT, new JsonObject()
         .put("$lt", jsonEntry.getStartVersion().getCreatedAt()));
   }
 
@@ -154,8 +310,8 @@ public class JsonEntryUtil {
       case "recipe":
         if (data.containsKey("result")) {
           id = data.getString("result");
-        } else if (data.containsKey("copy-from")) {
-          id = data.getString("copy-from");
+        } else if (data.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
+          id = data.getString(JsonUtil.INHERIT_FIELD_COPY_FROM);
         }
         if (data.containsKey("id_suffix")) {
           id = id + data.getString("id_suffix");
@@ -164,8 +320,8 @@ public class JsonEntryUtil {
       default:
         if (data.containsKey("id")) {
           id = data.getString("id");
-        } else if (data.containsKey("abstract")) {
-          id = data.getString("abstract");
+        } else if (data.containsKey(JsonUtil.INHERIT_FIELD_ABSTRACT)) {
+          id = data.getString(JsonUtil.INHERIT_FIELD_ABSTRACT);
         } else {
           id = type;
         }

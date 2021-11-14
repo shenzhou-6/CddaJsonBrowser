@@ -2,6 +2,7 @@ package fun.hydd.cddabrowser.utils;
 
 import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -117,5 +118,62 @@ class JsonEntryUtilTest {
   void generateUpdateAfterDBJsonEntryBulkOperation() {
     Version version = new Version();
     assertThat(JsonEntryUtil.generateUpdateAfterDBJsonEntryBulkOperation(jsonEntry, version)).isNotNull();
+  }
+
+  @Test
+  void processInheritJsonObject() {
+    JsonObject superData = new JsonObject()
+      .put("abstract", "super")
+      .put("is-change", "no change")
+      .put("no-change", "should no change")
+      .put("size", 100)
+      .put("count", 100)
+      .put("flag", new JsonArray().add("old have").add("old have two"))
+      .put("flag1", new JsonArray().add("old have"));
+    JsonObject data = new JsonObject()
+      .put("id", "sub")
+      .put("copy-from", "super")
+      .put("is-change", "change")
+      .put("relative", new JsonObject().put("size", -10))
+      .put("proportional", new JsonObject().put("count", 0.5))
+      .put("delete", new JsonObject().put("flag", new JsonArray().add("old have")))
+      .put("extend", new JsonObject().put("flag1", new JsonArray().add("new have")));
+
+    JsonObject newData = JsonEntryUtil.processInheritJsonObject(data, superData);
+
+    assertThat(newData.getString("id")).isEqualTo("sub");
+    assertThat(newData.getString("is-change")).isEqualTo("change");
+    assertThat(newData.getString("no-change")).isEqualTo("should no change");
+    assertThat(newData.getFloat("size")).isEqualTo(90);
+    assertThat(newData.getFloat("count")).isEqualTo(50);
+    assertThat(newData.getJsonArray("flag")).isEqualTo(new JsonArray().add("old have two"));
+    assertThat(newData.getJsonArray("flag1")).isEqualTo(new JsonArray().add("old have").add("new have"));
+
+    JsonObject superData1 = new JsonObject()
+      .put("abstract", "super")
+      .put("is-change", "no change")
+      .put("no-change", "should no change")
+      .put("size", 100)
+      .put("count", 100)
+      .put("flag", new JsonArray().add("old have").add("old have two"))
+      .put("flag1", new JsonArray().add("old have"));
+    JsonObject data1 = new JsonObject()
+      .put("id", "sub")
+      .put("copy-from", "super")
+      .put("is-change", "change")
+      .put("relative", new JsonObject().put("size", -10))
+      .put("proportional", new JsonObject().put("count", 0.5))
+      .put("delete", new JsonObject().put("flag", "old have"))
+      .put("extend", new JsonObject().put("flag1", "new have"));
+
+    JsonObject newData1 = JsonEntryUtil.processInheritJsonObject(data1, superData1);
+
+    assertThat(newData1.getString("id")).isEqualTo("sub");
+    assertThat(newData1.getString("is-change")).isEqualTo("change");
+    assertThat(newData1.getString("no-change")).isEqualTo("should no change");
+    assertThat(newData1.getFloat("size")).isEqualTo(90);
+    assertThat(newData1.getFloat("count")).isEqualTo(50);
+    assertThat(newData1.getJsonArray("flag")).isEqualTo(new JsonArray().add("old have two"));
+    assertThat(newData1.getJsonArray("flag1")).isEqualTo(new JsonArray().add("old have").add("new have"));
   }
 }

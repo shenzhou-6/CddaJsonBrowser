@@ -1,5 +1,6 @@
 package fun.hydd.cddabrowser;
 
+import fun.hydd.cddabrowser.entity.JsonEntry;
 import fun.hydd.cddabrowser.entity.Version;
 import fun.hydd.cddabrowser.exception.NoNeedUpdateException;
 import fun.hydd.cddabrowser.utils.FileUtil;
@@ -19,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class MainVerticle extends AbstractVerticle {
   public static final String PROJECT_NAME = "cdda-browser";
@@ -28,6 +30,7 @@ public class MainVerticle extends AbstractVerticle {
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private String gameRootDirPath;
   private String translateDirPath;
+  private Version latestVersion;
 
   @Override
   public void start(Promise<Void> startPromise) {
@@ -36,11 +39,13 @@ public class MainVerticle extends AbstractVerticle {
       .put("db_name", COLLECTION_TEST);
     MongoClient.createShared(this.vertx, mongoConfig);
     translateDirPath = FileUtil.getTranslateDirPath();
+    vertx.setTimer(5L * 1000, aLong -> timedUpdateGameData());
     startPromise.complete();
   }
 
   private void timedUpdateGameData() {
     VersionUtil.catchLatestVersionFromGithub(vertx)
+      .onSuccess(version -> latestVersion = version)
       .compose(this::judgeIsNeedUpdate)
       .compose(this::downloadGameZip)
       .compose(gameZipPath -> ProcessUtil.unzip(vertx, gameZipPath, FileUtil.getUnzipDirPath()))
@@ -49,20 +54,42 @@ public class MainVerticle extends AbstractVerticle {
       .compose(unused -> FileUtil.copyEnJsonFile(vertx, gameRootDirPath, translateDirPath))
       .compose(unused -> ProcessUtil.translateJsonFile(vertx, FileUtil.getTranslatePythonShellPath(), gameRootDirPath
         , translateDirPath))
-      .compose(unused -> this.processOriginalJsonData())
+      .compose(unused -> this.processGameJsonFile())
+      .compose(unused -> this.processOriginalJsonEntry())
       .onSuccess(unused -> logger.info("SAVE VERSION"))
       .onFailure(throwable -> {
         if (throwable instanceof NoNeedUpdateException) {
           this.logger.warn(throwable.getMessage());
         } else {
-          this.logger.error("TimedUpdateVersion() is fail:", throwable);
+          this.logger.error("TimedUpdateVersion() is fail:\n", throwable);
         }
       });
-
-
   }
 
-  private Future<Void> processOriginalJsonData() {
+  private Future<Void> processOriginalJsonEntry() {
+    MongoClient mongoClient = MongoClient.createShared(vertx, new JsonObject());
+    return JsonEntryUtil.getAllOriginalCollection(mongoClient)
+      .compose(this::processCollectionListOriginalJsonEntry);
+  }
+
+  private Future<Void> processCollectionListOriginalJsonEntry(List<String> collectionList) {
+    MongoClient mongoClient = MongoClient.createShared(vertx, new JsonObject());
+    if (collectionList.isEmpty()) {
+      return Future.succeededFuture();
+    }
+    String collection = collectionList.remove(0);
+    return JsonEntryUtil.getNeedProcessInheritJsonObject(mongoClient, collection, latestVersion)
+      .compose(jsonObjectList -> Future.succeededFuture(jsonObjectList.stream()
+        .map(jsonObject -> jsonObject.mapTo(JsonEntry.class))
+        .collect(Collectors.toList())))
+      .compose(jsonEntryList -> JsonEntryUtil.processInheritJsonObject(mongoClient, jsonEntryList))
+      .compose(jsonEntryList -> JsonEntryUtil.processNewJsonEntryList(mongoClient, jsonEntryList))
+      .compose(bulkOperationListMap -> MongoDBUtil.bulkWriteBulkOperationListMap(mongoClient,
+        bulkOperationListMap))
+      .compose(unused -> processCollectionListOriginalJsonEntry(collectionList));
+  }
+
+  private Future<Void> processGameJsonFile() {
     return FileUtil.scanDirectory(List.of(new File(translateDirPath)), this::processFile);
   }
 
