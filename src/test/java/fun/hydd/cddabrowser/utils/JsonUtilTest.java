@@ -91,4 +91,13 @@ public class JsonUtilTest {
     assertThat(JsonUtil.convertJsonArray(jsonArray2)).hasSize(1);
     assertThat(JsonUtil.convertJsonArray(jsonArray2)).hasSize(1);
   }
+
+  @Test
+  void convertObjectToJsonArray() {
+    Object object = new JsonArray().add("test").add("test1");
+    Object object1 = "test1";
+
+    assertThat(JsonUtil.convertObjectToJsonArray(object)).isEqualTo(new JsonArray().add("test").add("test1"));
+    assertThat(JsonUtil.convertObjectToJsonArray(object1)).isEqualTo(new JsonArray().add("test1"));
+  }
 }

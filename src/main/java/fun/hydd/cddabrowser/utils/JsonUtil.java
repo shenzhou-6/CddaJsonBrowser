@@ -49,4 +49,12 @@ public class JsonUtil {
   public static boolean isEmpty(JsonArray jsonArray) {
     return jsonArray == null || jsonArray.isEmpty();
   }
+
+  public static JsonArray convertObjectToJsonArray(Object object) {
+    if (object instanceof JsonArray) {
+      return (JsonArray) object;
+    } else {
+      return new JsonArray().add(object);
+    }
+  }
 }
