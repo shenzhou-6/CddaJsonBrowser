@@ -100,4 +100,17 @@ public class JsonUtilTest {
     assertThat(JsonUtil.convertObjectToJsonArray(object)).isEqualTo(new JsonArray().add("test").add("test1"));
     assertThat(JsonUtil.convertObjectToJsonArray(object1)).isEqualTo(new JsonArray().add("test1"));
   }
+
+  @Test
+  void isJsonFile() {
+    String test = "test1.json";
+    String test1 = "test/sb/test.json";
+    String test2 = "test/sb/test.jsn";
+    String test3 = "test/sb/json";
+
+    assertThat(JsonUtil.isJsonFile(test)).isTrue();
+    assertThat(JsonUtil.isJsonFile(test1)).isTrue();
+    assertThat(JsonUtil.isJsonFile(test2)).isFalse();
+    assertThat(JsonUtil.isJsonFile(test3)).isFalse();
+  }
 }

@@ -6,6 +6,7 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,5 +63,13 @@ public class JsonUtil {
     } else {
       return new JsonArray().add(object);
     }
+  }
+
+  public static boolean isJsonFile(File file) {
+    return isJsonFile(file.getAbsolutePath());
+  }
+
+  public static boolean isJsonFile(String path) {
+    return path.endsWith(".json");
   }
 }
