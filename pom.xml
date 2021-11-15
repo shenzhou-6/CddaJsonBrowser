@@ -97,6 +97,11 @@
       <version>3.21.0</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>20030203.000550</version>
+    </dependency>
   </dependencies>
 
   <build>
