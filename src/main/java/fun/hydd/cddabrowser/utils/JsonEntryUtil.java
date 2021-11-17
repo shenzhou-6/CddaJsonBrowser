@@ -23,6 +23,7 @@ public class JsonEntryUtil {
   public static final String START_VERSION_CREATED_AT = "startVersion.created_at";
   public static final String END_VERSION_CREATED_AT = "endVersion.created_at";
   static final Logger logger = LoggerFactory.getLogger(JsonEntryUtil.class);
+  public static Map<String, JsonEntry> jsonEntryMap = new HashMap<>();
 
   private JsonEntryUtil() {
   }
@@ -30,48 +31,72 @@ public class JsonEntryUtil {
   public static Future<List<JsonEntry>> processInheritJsonEntryList(MongoClient mongoClient,
                                                                     List<JsonEntry> jsonEntryList,
                                                                     List<String> sortedModList) {
+    @SuppressWarnings("rawtypes") List<Future> futureList = new ArrayList<>();
     List<JsonEntry> newJsonEntryList = new ArrayList<>();
-    return CommonUtil
-      .chainCall(jsonEntryList, jsonEntry ->
-        processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod(), null)
-          .onSuccess(newJsonEntryList::add))
+    for (JsonEntry jsonEntry : jsonEntryList) {
+      futureList.add(processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod())
+        .onSuccess(newJsonEntryList::add));
+    }
+    return CompositeFuture.all(futureList)
       .compose(compositeFuture -> Future.succeededFuture(newJsonEntryList));
   }
 
-  public static Future<JsonEntry> processInheritJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry,
-                                                          List<String> sortedModList, String currentMod,
-                                                          JsonEntry newJsonEntry) {
-    if (newJsonEntry != null || sortedModList.isEmpty()) {
+  private static Future<JsonEntry> findSuperJsonEntry(MongoClient mongoClient, JsonEntry subJsonEntry,
+                                                      List<String> sortedModList, String currentMod,
+                                                      JsonEntry superJsonEntry) {
+    if (superJsonEntry != null || sortedModList.isEmpty()) {
       if (sortedModList.isEmpty()) {
-        logger.warn("no find all supper data for {}", jsonEntry);
-      } else {
-        logger.warn("in mod {} no find all supper data for {}", currentMod, jsonEntry);
+        logger.warn("no find all supper data for {}", subJsonEntry);
       }
-      return Future.succeededFuture(jsonEntry);
+      return Future.succeededFuture(subJsonEntry);
     }
     String mod = "dda";
     int index = sortedModList.indexOf(currentMod);
     if (index > 1) {
       mod = sortedModList.get(index - 1);
     }
-    JsonObject data = jsonEntry.getData();
-    jsonEntry.setOriginal(false);
+    JsonObject data = subJsonEntry.getData();
+    subJsonEntry.setOriginal(false);
     if (!data.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
-      return Future.succeededFuture(jsonEntry);
+      return Future.succeededFuture(subJsonEntry);
     }
     String copyFrom = data.getString(JsonUtil.INHERIT_FIELD_COPY_FROM);
     JsonObject query = new JsonObject()
-      .put("id", copyFrom)
+      .put("id", copyFrom)//todo type can diff but common is eq
       .put("mod", mod);
-    return getCurrentEffectiveJsonEntry(mongoClient, query, jsonEntry.getCollectionName())
+    String collectionName = subJsonEntry.getLanguage() + "_" + ("dda".equals(subJsonEntry.getMod()) ? "original" :
+      "process");
+    return getCurrentEffectiveJsonEntry(mongoClient, query, collectionName)
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
-          JsonObject superData = jsonObject.getJsonObject("data");
-          jsonEntry.setData(processInheritJsonObject(data, superData));
+          return Future.succeededFuture(jsonObject.mapTo(JsonEntry.class));
         }
+        return Future.succeededFuture();
+      })
+      .compose(jsonEntry1 -> findSuperJsonEntry(mongoClient, subJsonEntry, sortedModList, currentMod, jsonEntry1));
+  }
+
+  public static Future<JsonEntry> processInheritJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry,
+                                                          List<String> sortedModList, String currentMod) {
+    if (jsonEntryMap.containsKey(jsonEntry.getId())) {
+      logger.info("in map find {}", jsonEntry.getId());
+      return Future.succeededFuture(jsonEntryMap.get(jsonEntry.getId()));
+    }
+    return findSuperJsonEntry(mongoClient, jsonEntry, sortedModList, currentMod, null)
+      .compose(jsonEntry1 -> {
+        JsonObject superData = jsonEntry1.getData();
+        if (superData.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
+          logger.info("Start process super inheritJsonEntry {}", jsonEntry1.getId());
+          return processInheritJsonEntry(mongoClient, jsonEntry1, sortedModList, currentMod)
+            .compose(jsonEntry2 -> {
+              jsonEntry.setData(processInheritJsonObject(jsonEntry.getData(), jsonEntry2.getData()));
+              return Future.succeededFuture(jsonEntry);
+            });
+        }
+        jsonEntry.setData(processInheritJsonObject(jsonEntry.getData(), superData));
         return Future.succeededFuture(jsonEntry);
       })
-      .compose(jsonEntry1 -> processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, currentMod, jsonEntry1));
+      .onSuccess(jsonEntry1 -> jsonEntryMap.put(jsonEntry1.getId(), jsonEntry1));
   }
 
   public static Future<List<String>> getSortedMod(MongoClient mongoClient, String collection) {
@@ -147,12 +172,14 @@ public class JsonEntryUtil {
       JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_DELETE);
       for (Map.Entry<String, Object> entry : jsonObject) {
         final String key = entry.getKey();
-        JsonArray oldJsonArray = superData.getJsonArray(key);
-        JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
-        for (Object object : newJsonArray) {
-          oldJsonArray.remove(object);
+        if (superData.containsKey(key)) {
+          JsonArray oldJsonArray = superData.getJsonArray(key);
+          JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
+          for (Object object : newJsonArray) {
+            oldJsonArray.remove(object);
+          }
+          superData.put(key, oldJsonArray);
         }
-        superData.put(key, oldJsonArray);
       }
       data.remove(JsonUtil.INHERIT_FIELD_DELETE);
     }
@@ -160,7 +187,11 @@ public class JsonEntryUtil {
       JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_RELATIVE);
       for (Map.Entry<String, Object> entry : jsonObject) {
         final String key = entry.getKey();
-        superData.put(key, superData.getFloat(key) + Double.parseDouble(String.valueOf(entry.getValue())));
+        if (superData.containsKey(key)) {
+          superData.put(key, superData.getFloat(key) + Double.parseDouble(String.valueOf(entry.getValue())));
+        } else {
+          superData.put(key, Double.parseDouble(String.valueOf(entry.getValue())));
+        }
       }
       data.remove(JsonUtil.INHERIT_FIELD_RELATIVE);
     }
@@ -168,7 +199,9 @@ public class JsonEntryUtil {
       JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_PROPORTIONAL);
       for (Map.Entry<String, Object> entry : jsonObject) {
         final String key = entry.getKey();
-        superData.put(key, superData.getFloat(key) * Double.parseDouble(String.valueOf(entry.getValue())));
+        if (superData.containsKey(key)) {
+          superData.put(key, superData.getFloat(key) * Double.parseDouble(String.valueOf(entry.getValue())));
+        }
       }
       data.remove(JsonUtil.INHERIT_FIELD_PROPORTIONAL);
     }
