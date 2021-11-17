@@ -30,13 +30,11 @@ public class JsonEntryUtil {
   public static Future<List<JsonEntry>> processInheritJsonEntryList(MongoClient mongoClient,
                                                                     List<JsonEntry> jsonEntryList,
                                                                     List<String> sortedModList) {
-    @SuppressWarnings("rawtypes") List<Future> futureList = new ArrayList<>();
     List<JsonEntry> newJsonEntryList = new ArrayList<>();
-    for (JsonEntry jsonEntry : jsonEntryList) {
-      futureList.add(processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod(), null)
-        .onSuccess(newJsonEntryList::add));
-    }
-    return CompositeFuture.all(futureList)
+    return CommonUtil
+      .chainCall(jsonEntryList, jsonEntry ->
+        processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod(), null)
+          .onSuccess(newJsonEntryList::add))
       .compose(compositeFuture -> Future.succeededFuture(newJsonEntryList));
   }
 
