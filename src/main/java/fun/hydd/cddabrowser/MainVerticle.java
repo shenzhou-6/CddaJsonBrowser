@@ -28,7 +28,6 @@ public class MainVerticle extends AbstractVerticle {
   private static final String COLLECTION_TEST = "test";
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
-  private String gameRootDirPath;
   private String translateDirPath;
   private Version latestVersion;
 
@@ -37,7 +36,7 @@ public class MainVerticle extends AbstractVerticle {
     final JsonObject mongoConfig = new JsonObject()
       .put("connection_string", MONGODB_URL)
       .put("db_name", COLLECTION_TEST);
-    MongoClient mongoClient = MongoClient.createShared(this.vertx, mongoConfig);
+    MongoClient.createShared(this.vertx, mongoConfig);
     vertx.setTimer(1000L, aLong -> timedUpdateGameData());
     startPromise.complete();
   }
@@ -108,7 +107,7 @@ public class MainVerticle extends AbstractVerticle {
           return jsonEntry;
         })
         .collect(Collectors.toList())))
-      .compose(jsonEntryList -> JsonEntryUtil.processInheritJsonObject(mongoClient, jsonEntryList, sortedModList))
+      .compose(jsonEntryList -> JsonEntryUtil.processInheritJsonEntryList(mongoClient, jsonEntryList, sortedModList))
       .compose(jsonEntryList -> JsonEntryUtil.processNewJsonEntryList(mongoClient, jsonEntryList))
       .compose(bulkOperationListMap -> MongoDBUtil.bulkWriteBulkOperationListMap(mongoClient,
         bulkOperationListMap))
