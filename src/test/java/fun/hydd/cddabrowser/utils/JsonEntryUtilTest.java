@@ -41,14 +41,15 @@ class JsonEntryUtilTest {
 
   @Test
   void getRelativePath() {
-    String absolutePath = "/home/hydd/unzip/cataclysm-2021-10-1/data/core/test.json";
-    String absolutePath1 = "/home/hydd/unzip/cataclysm-2021-10-1/data/core/testDir/test.json";
-    String absolutePath2 = "/home/hydd/unzip/cataclysm-2021-10-1/data/row/testDir/tesDir2/test.json";
-    String absolutePathFail = "/home/hydd/unzip/cataclysm-2021-1-fail-0-1/data/row/testDir/tesDir2/test.json";
+    String absolutePath = "/home/hydd/unzip/cataclysm-2021-10-1/zh_CN/data/core/test.json";
+    String absolutePath1 = "/home/hydd/unzip/cataclysm-2021-10-1/zh_CN/data/core/testDir/test.json";
+    String absolutePath2 = "/home/hydd/unzip/cataclysm-2021-10-1/zh_CN/data/row/testDir/tesDir2/test.json";
+    String absolutePathFail = "/home/hydd/unzip/cataclysm-2021-1-fail-0-1/zh_CN/data/row/testDir/tesDir2/test.json";
     String tag = "cataclysm-2021-10-1";
     assertThat(JsonEntryUtil.parserRelativePath(absolutePath, tag)).isEqualTo("/data/core/test.json");
     assertThat(JsonEntryUtil.parserRelativePath(absolutePath1, tag)).isEqualTo("/data/core/testDir/test.json");
-    assertThat(JsonEntryUtil.parserRelativePath(absolutePath2, tag)).isEqualTo("/data/row/testDir/tesDir2/test.json");
+    assertThat(JsonEntryUtil.parserRelativePath(absolutePath2, tag)).isEqualTo("/data/row/testDir/tesDir2/test" +
+      ".json");
     assertThat(JsonEntryUtil.parserRelativePath(absolutePathFail, tag)).isEmpty();
   }
 
@@ -175,5 +176,18 @@ class JsonEntryUtilTest {
     assertThat(newData1.getFloat("count")).isEqualTo(50);
     assertThat(newData1.getJsonArray("flag")).isEqualTo(new JsonArray().add("old have two"));
     assertThat(newData1.getJsonArray("flag1")).isEqualTo(new JsonArray().add("old have").add("new have"));
+  }
+
+  @Test
+  void parserLanguage() {
+    String path = "/home/wilson/Translate/cataclysm-2021-10-1/ar/";
+    String path1 = "/home/wilson/Translate/cataclysm-2021-10-1/ar/data/json/flags/test.json";
+    String path2 = "/home/wilson/Translate/cataclysm-2021-10-1/ar/data/json/test";
+    String path3 = "/home/wilson/Translate/cataclysm-2021-10-1/zh_CN/data/json/flags/";
+
+    assertThat(JsonEntryUtil.parserLanguage(path)).isEqualTo("ar");
+    assertThat(JsonEntryUtil.parserLanguage(path1)).isEqualTo("ar");
+    assertThat(JsonEntryUtil.parserLanguage(path2)).isEqualTo("ar");
+    assertThat(JsonEntryUtil.parserLanguage(path3)).isEqualTo("zh_CN");
   }
 }

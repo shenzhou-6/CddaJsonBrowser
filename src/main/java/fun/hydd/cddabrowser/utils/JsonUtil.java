@@ -72,4 +72,13 @@ public class JsonUtil {
   public static boolean isJsonFile(String path) {
     return path.endsWith(".json");
   }
+
+  public static boolean isIgnoreJsonFile(File file) {
+    return isIgnoreJsonFile(file.getName());
+  }
+
+  public static boolean isIgnoreJsonFile(String string) {
+    List<String> ignoreFileName = List.of("replacements.json", "no_bright_background.json");
+    return ignoreFileName.contains(string);
+  }
 }

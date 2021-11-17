@@ -8,7 +8,6 @@ import fun.hydd.cddabrowser.utils.HttpUtil;
 import fun.hydd.cddabrowser.utils.JsonEntryUtil;
 import fun.hydd.cddabrowser.utils.JsonUtil;
 import fun.hydd.cddabrowser.utils.MongoDBUtil;
-import fun.hydd.cddabrowser.utils.ProcessUtil;
 import fun.hydd.cddabrowser.utils.VersionUtil;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
@@ -19,13 +18,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class MainVerticle extends AbstractVerticle {
   public static final String PROJECT_NAME = "cdda-browser";
   private static final String MONGODB_URL = "mongodb://127.0.0.1:27017";
-  private static final String COLLECTION_TEST = "cdda_browser";
+  private static final String COLLECTION_TEST = "test";
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   private String gameRootDirPath;
@@ -37,24 +37,34 @@ public class MainVerticle extends AbstractVerticle {
     final JsonObject mongoConfig = new JsonObject()
       .put("connection_string", MONGODB_URL)
       .put("db_name", COLLECTION_TEST);
-    MongoClient.createShared(this.vertx, mongoConfig);
-    translateDirPath = FileUtil.getTranslateDirPath();
-    vertx.setTimer(5L * 1000, aLong -> timedUpdateGameData());
+    MongoClient mongoClient = MongoClient.createShared(this.vertx, mongoConfig);
+    vertx.setTimer(1000L, aLong -> timedUpdateGameData());
     startPromise.complete();
   }
 
   private void timedUpdateGameData() {
-    VersionUtil.catchLatestVersionFromGithub(vertx)
-      .onSuccess(version -> latestVersion = version)
-      .compose(this::judgeIsNeedUpdate)
-      .compose(this::downloadGameZip)
-      .compose(gameZipPath -> ProcessUtil.unzip(vertx, gameZipPath, FileUtil.getUnzipDirPath()))
-      .onSuccess(unused -> gameRootDirPath = FileUtil.findGameRootDirPath())
-      .compose(unused -> ProcessUtil.compileMo(vertx, gameRootDirPath))
-      .compose(unused -> FileUtil.copyEnJsonFile(vertx, gameRootDirPath, translateDirPath))
-      .compose(unused -> ProcessUtil.translateJsonFile(vertx, FileUtil.getTranslatePythonShellPath(), gameRootDirPath
-        , translateDirPath))
-      .compose(unused -> this.processGameJsonFile())
+//    VersionUtil.catchLatestVersionFromGithub(vertx)
+//      .onSuccess(version -> latestVersion = version)
+//      .compose(this::judgeIsNeedUpdate)
+//      .onSuccess(version -> FileUtil.clearUnzipDirAndTranslateDir())
+//      .compose(this::downloadGameZip)
+//      .compose(gameZipPath -> ProcessUtil.unzip(vertx, gameZipPath, FileUtil.getUnzipDirPath()))
+//      .onSuccess(unused -> gameRootDirPath = FileUtil.findGameRootDirPath())
+//      .compose(unused -> ProcessUtil.compileMo(vertx, gameRootDirPath))
+//      .compose(unused -> FileUtil.copyEnJsonFile(vertx, gameRootDirPath, translateDirPath))
+//      .compose(unused -> ProcessUtil.translateJsonFile(vertx, FileUtil.getTranslatePythonShellPath(), gameRootDirPath
+//        , translateDirPath))
+    Future.succeededFuture()
+      .onSuccess(o -> latestVersion = new JsonObject("{\n" +
+        "  \"name\" : \"Cataclysm-DDA experimental build 2021-11-14-0817\",\n" +
+        "  \"tag_name\" : \"cdda-experimental-2021-11-14-0817\",\n" +
+        "  \"target_commitish\" : \"564d632595faa5feb47c7dc9d34a9a5b932e8c08\",\n" +
+        "  \"branch\" : 0,\n" +
+        "  \"created_at\" : 1636877859000\n" +
+        "}").mapTo(Version.class))
+      .onSuccess(o -> translateDirPath = FileUtil.getTranslateDirPath() + latestVersion.getTagName())
+//      .compose(unused -> this.processGameJsonFile())
+      .onSuccess(jsonEntryList -> logger.info("processGameJsonFile success"))
       .compose(unused -> this.processOriginalJsonEntry())
       .onSuccess(unused -> logger.info("SAVE VERSION"))
       .onFailure(throwable -> {
@@ -78,27 +88,54 @@ public class MainVerticle extends AbstractVerticle {
       return Future.succeededFuture();
     }
     String collection = collectionList.remove(0);
-    return JsonEntryUtil.getNeedProcessInheritJsonObject(mongoClient, collection, latestVersion)
+    return JsonEntryUtil.getSortedMod(mongoClient, collection)
+      .compose(strings -> processCollectionListOriginalJsonEntryByMod(collection, strings));
+  }
+
+  private Future<Void> processCollectionListOriginalJsonEntryByMod(String collection,
+                                                                   List<String> sortedModList) {
+    MongoClient mongoClient = MongoClient.createShared(vertx, new JsonObject());
+    if (sortedModList.isEmpty()) {
+      return Future.succeededFuture();
+    }
+    String mod = sortedModList.remove(0);
+    logger.info("start process {},mod is {}", collection, mod);
+    return JsonEntryUtil.getNeedProcessInheritJsonObjectByMod(mongoClient, collection, latestVersion, mod)
       .compose(jsonObjectList -> Future.succeededFuture(jsonObjectList.stream()
-        .map(jsonObject -> jsonObject.mapTo(JsonEntry.class))
+        .map(jsonObject -> {
+          JsonEntry jsonEntry = jsonObject.mapTo(JsonEntry.class);
+          jsonEntry.setData(jsonObject.getJsonObject("data"));
+          return jsonEntry;
+        })
         .collect(Collectors.toList())))
-      .compose(jsonEntryList -> JsonEntryUtil.processInheritJsonObject(mongoClient, jsonEntryList))
+      .compose(jsonEntryList -> JsonEntryUtil.processInheritJsonObject(mongoClient, jsonEntryList, sortedModList))
       .compose(jsonEntryList -> JsonEntryUtil.processNewJsonEntryList(mongoClient, jsonEntryList))
       .compose(bulkOperationListMap -> MongoDBUtil.bulkWriteBulkOperationListMap(mongoClient,
         bulkOperationListMap))
-      .compose(unused -> processCollectionListOriginalJsonEntry(collectionList));
+      .compose(unused -> processCollectionListOriginalJsonEntryByMod(collection, sortedModList));
   }
 
   private Future<Void> processGameJsonFile() {
-    return FileUtil.scanDirectory(List.of(new File(translateDirPath)), this::processFile);
+    List<File> fileList = new ArrayList<>();
+    fileList.add(new File(translateDirPath));
+    return FileUtil.scanDirectory(fileList, this::processFile);
   }
 
   private Future<Void> processFile(File file) {
+    if (file.isDirectory() || !JsonUtil.isJsonFile(file) || JsonUtil.isIgnoreJsonFile(file)) {
+      return Future.succeededFuture();
+    }
+    logger.info("process file is {}", file);
     MongoClient mongoClient = MongoClient.createShared(vertx, new JsonObject());
     return vertx.fileSystem().readFile(file.getAbsolutePath())
+      .compose(buffer -> MongoDBUtil.escapeBsonField(buffer, vertx))
       .compose(buffer -> {
         List<JsonObject> jsonObjectList = JsonUtil.bufferToJsonObjectList(buffer);
-        return JsonEntryUtil.processNewJsonEntryListByJsonObjectList(mongoClient, jsonObjectList)
+        return JsonEntryUtil.processNewJsonEntryListByJsonObjectList(mongoClient,
+            JsonEntryUtil.parserLanguage(file),
+            latestVersion,
+            JsonEntryUtil.parserRelativePath(file, latestVersion),
+            jsonObjectList)
           .compose(stringListMap -> MongoDBUtil.bulkWriteBulkOperationListMap(mongoClient, stringListMap));
       });
   }

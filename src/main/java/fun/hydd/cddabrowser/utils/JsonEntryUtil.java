@@ -22,25 +22,40 @@ import java.util.stream.Collectors;
 public class JsonEntryUtil {
   public static final String START_VERSION_CREATED_AT = "startVersion.created_at";
   public static final String END_VERSION_CREATED_AT = "endVersion.created_at";
-  public static final String NO_FIND_ANY_JSON_ENTRY = "no find any JsonEntry";
   static final Logger logger = LoggerFactory.getLogger(JsonEntryUtil.class);
 
   private JsonEntryUtil() {
   }
 
   public static Future<List<JsonEntry>> processInheritJsonObject(MongoClient mongoClient,
-                                                                 List<JsonEntry> jsonEntryList) {
+                                                                 List<JsonEntry> jsonEntryList,
+                                                                 List<String> sortedModList) {
     @SuppressWarnings("rawtypes") List<Future> futureList = new ArrayList<>();
     List<JsonEntry> newJsonEntryList = new ArrayList<>();
     for (JsonEntry jsonEntry : jsonEntryList) {
-      futureList.add(processInheritJsonObject(mongoClient, jsonEntry)
+      futureList.add(processInheritJsonObject(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod(), null)
         .onSuccess(newJsonEntryList::add));
     }
     return CompositeFuture.all(futureList)
       .compose(compositeFuture -> Future.succeededFuture(newJsonEntryList));
   }
 
-  public static Future<JsonEntry> processInheritJsonObject(MongoClient mongoClient, JsonEntry jsonEntry) {
+  public static Future<JsonEntry> processInheritJsonObject(MongoClient mongoClient, JsonEntry jsonEntry,
+                                                           List<String> sortedModList, String currentMod,
+                                                           JsonEntry newJsonEntry) {
+    if (newJsonEntry != null || sortedModList.isEmpty()) {
+      if (sortedModList.isEmpty()) {
+        logger.warn("no find all supper data for {}", jsonEntry);
+      } else {
+        logger.warn("in mod {} no find all supper data for {}", currentMod, jsonEntry);
+      }
+      return Future.succeededFuture(jsonEntry);
+    }
+    String mod = "dda";
+    int index = sortedModList.indexOf(currentMod);
+    if (index > 1) {
+      mod = sortedModList.get(index - 1);
+    }
     JsonObject data = jsonEntry.getData();
     jsonEntry.setOriginal(false);
     if (!data.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
@@ -48,17 +63,66 @@ public class JsonEntryUtil {
     }
     String copyFrom = data.getString(JsonUtil.INHERIT_FIELD_COPY_FROM);
     JsonObject query = new JsonObject()
-      .put("id", copyFrom);
+      .put("id", copyFrom)
+      .put("mod", mod);
     return getCurrentEffectiveJsonEntry(mongoClient, query, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
-        if (JsonUtil.isEmpty(jsonObject)) {
-          logger.warn("no find copy from json entry,\n{}", jsonEntry);
-        } else {
+        if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonObject superData = jsonObject.getJsonObject("data");
           jsonEntry.setData(processInheritJsonObject(data, superData));
         }
         return Future.succeededFuture(jsonEntry);
+      })
+      .compose(jsonEntry1 -> processInheritJsonObject(mongoClient, jsonEntry, sortedModList, currentMod, jsonEntry1));
+  }
+
+  public static Future<List<String>> getSortedMod(MongoClient mongoClient, String collection) {
+    return getAllModInfoDataJsonObject(mongoClient, collection)
+      .compose(jsonObjectList -> {
+        Map<String, List<String>> map = getAllModInfoMap(jsonObjectList);
+        List<String> sortKeyList = topologySort(map);
+        return Future.succeededFuture(sortKeyList);
       });
+  }
+
+  private static Future<List<JsonObject>> getAllModInfoDataJsonObject(MongoClient mongoClient, String collection) {
+    JsonObject query = new JsonObject()
+      .put("type", "MOD_INFO");
+    return mongoClient.find(collection, query)
+      .compose(jsonObjectList -> Future.succeededFuture(
+        jsonObjectList.stream().map(jsonObject -> jsonObject.getJsonObject("data")).collect(Collectors.toList())));
+  }
+
+  private static Map<String, List<String>> getAllModInfoMap(List<JsonObject> dataJsonObject) {
+    Map<String, List<String>> map = new HashMap<>();
+    for (JsonObject jsonObject : dataJsonObject) {
+      List<String> dependencies = new ArrayList<>();
+      if (jsonObject.containsKey("dependencies")) {
+        for (Object o : jsonObject.getJsonArray("dependencies")) {
+          dependencies.add(String.valueOf(o));
+        }
+      }
+      map.put(jsonObject.getString("id"), dependencies);
+    }
+    return map;
+  }
+
+  private static List<String> topologySort(Map<String, List<String>> map) {
+    List<String> result = new ArrayList<>();
+    while (!map.isEmpty()) {
+      for (Map.Entry<String, List<String>> entry : map.entrySet()) {
+        if (entry.getValue().isEmpty()) {
+          result.add(entry.getKey());
+        }
+      }
+      for (String mod : result) {
+        map.remove(mod);
+      }
+      for (Map.Entry<String, List<String>> entry : map.entrySet()) {
+        entry.getValue().removeIf(result::contains);
+      }
+    }
+    return result;
   }
 
   public static JsonObject processInheritJsonObject(JsonObject data, JsonObject superData) {
@@ -67,10 +131,15 @@ public class JsonEntryUtil {
       JsonObject jsonObject = data.getJsonObject(JsonUtil.INHERIT_FIELD_EXTEND);
       for (Map.Entry<String, Object> entry : jsonObject) {
         final String key = entry.getKey();
-        JsonArray oldJsonArray = superData.getJsonArray(key);
-        JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
-        for (Object object : newJsonArray) {
-          oldJsonArray.add(object);
+        JsonArray oldJsonArray = null;
+        if (superData.containsKey(key)) {
+          oldJsonArray = superData.getJsonArray(key);
+          JsonArray newJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
+          for (Object object : newJsonArray) {
+            oldJsonArray.add(object);
+          }
+        } else {
+          oldJsonArray = JsonUtil.convertObjectToJsonArray(entry.getValue());
         }
         superData.put(key, oldJsonArray);
       }
@@ -111,10 +180,13 @@ public class JsonEntryUtil {
     return superData;
   }
 
-  public static Future<List<JsonObject>> getNeedProcessInheritJsonObject(MongoClient mongoClient, String collection,
-                                                                         Version version) {
+  public static Future<List<JsonObject>> getNeedProcessInheritJsonObjectByMod(MongoClient mongoClient,
+                                                                              String collection,
+                                                                              Version version,
+                                                                              String mod) {
     JsonObject query = new JsonObject()
-      .put("endVersion", JsonObject.mapFrom(version));
+      .put("endVersion", JsonObject.mapFrom(version))
+      .put("mod", mod);
     return mongoClient.find(collection, query);
   }
 
@@ -128,10 +200,13 @@ public class JsonEntryUtil {
   }
 
   public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryListByJsonObjectList(MongoClient mongoClient,
+                                                                                                 String language,
+                                                                                                 Version version,
+                                                                                                 String path,
                                                                                                  List<JsonObject> jsonObjectList) {
     List<JsonEntry> jsonEntryList = new ArrayList<>();
     for (JsonObject jsonObject : jsonObjectList) {
-      jsonEntryList.add(jsonObject.mapTo(JsonEntry.class));
+      jsonEntryList.add(new JsonEntry(jsonObject, language, version, path));
     }
     return processNewJsonEntryList(mongoClient, jsonEntryList);
   }
@@ -148,7 +223,7 @@ public class JsonEntryUtil {
           if (bulkOperationListMap.containsKey(collectionName)) {
             bulkOperationListMap.get(collectionName).add(bulkOperation);
           } else {
-            bulkOperationListMap.put(collectionName, List.of(bulkOperation));
+            bulkOperationListMap.put(collectionName, new ArrayList<>(List.of(bulkOperation)));
           }
         }));
     }
@@ -159,7 +234,8 @@ public class JsonEntryUtil {
   public static Future<BulkOperation> processNewJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry) {
     return judgeCurrentEffectiveVersionJsonEntry(mongoClient, null, jsonEntry)
       .compose(bulkOperation -> judgeAfterVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry))
-      .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry));
+      .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry))
+      .compose(bulkOperation -> judgeIsNewJsonEntry(bulkOperation, jsonEntry));
   }
 
   public static Future<JsonObject> getCurrentEffectiveJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
@@ -171,7 +247,7 @@ public class JsonEntryUtil {
       .findWithOptions(collection, queryCondition, findOptions)
       .compose(jsonObjectList -> {
         if (jsonObjectList == null || jsonObjectList.isEmpty()) {
-          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+          return Future.succeededFuture();
         } else {
           return Future.succeededFuture(jsonObjectList.get(0));
         }
@@ -187,7 +263,7 @@ public class JsonEntryUtil {
       .findWithOptions(collection, queryCondition, findOptions)
       .compose(jsonObjectList -> {
         if (jsonObjectList == null || jsonObjectList.isEmpty()) {
-          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+          return Future.succeededFuture();
         } else {
           return Future.succeededFuture(jsonObjectList.get(0));
         }
@@ -203,7 +279,7 @@ public class JsonEntryUtil {
       .findWithOptions(collection, queryCondition, findOptions)
       .compose(jsonObjectList -> {
         if (jsonObjectList == null || jsonObjectList.isEmpty()) {
-          return Future.failedFuture(NO_FIND_ANY_JSON_ENTRY);
+          return Future.succeededFuture();
         } else {
           return Future.succeededFuture(jsonObjectList.get(0));
         }
@@ -223,7 +299,8 @@ public class JsonEntryUtil {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
           if (!dbJsonEntry.getData().equals(jsonEntry.getData()) &&
             dbJsonEntry.getEndVersion().equals(dbJsonEntry.getStartVersion())) {
-            return Future.succeededFuture(generateReplaceJsonEntryBulkOperation(dbJsonEntry, jsonEntry));
+            return Future.succeededFuture(generateReplaceJsonEntryBulkOperation(dbJsonEntry,
+              jsonEntry));
           }
         }
         return Future.succeededFuture();
@@ -274,24 +351,32 @@ public class JsonEntryUtil {
       });
   }
 
+  public static Future<BulkOperation> judgeIsNewJsonEntry(BulkOperation bulkOperation, JsonEntry jsonEntry) {
+    if (bulkOperation != null) {
+      return Future.succeededFuture(bulkOperation);
+    } else {
+      return Future.succeededFuture(generateInsertJsonEntryBulkOperation(jsonEntry));
+    }
+  }
+
   public static JsonObject generateCurrentEffectiveVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
       .put(START_VERSION_CREATED_AT, new JsonObject()
-        .put("$lte", jsonEntry.getStartVersion().getCreatedAt()))
+        .put("$lte", jsonEntry.getStartVersion().getCreatedAt().toInstant()))
       .put(END_VERSION_CREATED_AT, new JsonObject()
-        .put("$gte", jsonEntry.getEndVersion().getCreatedAt()));
+        .put("$gte", jsonEntry.getEndVersion().getCreatedAt().toInstant()));
   }
 
   public static JsonObject generateAfterVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
       .put(START_VERSION_CREATED_AT, new JsonObject()
-        .put("$gt", jsonEntry.getEndVersion().getCreatedAt()));
+        .put("$gt", jsonEntry.getEndVersion().getCreatedAt().toInstant()));
   }
 
   public static JsonObject generateBeforeVersionJsonEntryQuery(final JsonEntry jsonEntry) {
     return generateEqualJsonEntryQuery(jsonEntry)
       .put(END_VERSION_CREATED_AT, new JsonObject()
-        .put("$lt", jsonEntry.getStartVersion().getCreatedAt()));
+        .put("$lt", jsonEntry.getStartVersion().getCreatedAt().toInstant()));
   }
 
   public static JsonObject generateEqualJsonEntryQuery(JsonEntry jsonEntry) {
@@ -340,7 +425,7 @@ public class JsonEntryUtil {
     if (tagIndex == -1) {
       return "";
     }
-    return absolutePath.substring(absolutePath.indexOf("/", tagIndex + tag.length()));
+    return absolutePath.substring(absolutePath.indexOf("/", tagIndex + tag.length() + 1));
   }
 
   public static String parserModByPath(final String path) {
@@ -349,6 +434,16 @@ public class JsonEntryUtil {
     } else {
       return "dda";
     }
+  }
+
+  public static String parserLanguage(File file) {
+    return parserLanguage(file.getAbsolutePath());
+  }
+
+  public static String parserLanguage(String path) {
+    int startIndex = FileUtil.getTranslateDirPath().length();
+    final String[] split = path.substring(startIndex).split("/");
+    return split[1];
   }
 
   public static BulkOperation generateInsertJsonEntryBulkOperation(final JsonEntry jsonEntry) {

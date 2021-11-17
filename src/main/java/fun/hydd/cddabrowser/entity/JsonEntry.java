@@ -37,7 +37,7 @@ public class JsonEntry {
   }
 
   public String getCollectionName() {
-    return this.type + "_" + (this.isOriginal ? "original" : "process");
+    return this.language + "_" + (this.isOriginal ? "original" : "process");
   }
 
   public String getMod() {
