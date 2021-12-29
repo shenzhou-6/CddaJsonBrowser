@@ -102,6 +102,16 @@
       <artifactId>commons-io</artifactId>
       <version>20030203.000550</version>
     </dependency>
+    <dependency>
+      <groupId>org.eclipse.jgit</groupId>
+      <artifactId>org.eclipse.jgit</artifactId>
+      <version>6.0.0.202111291000-r</version>
+    </dependency>
+    <dependency>
+      <groupId>black.ninia</groupId>
+      <artifactId>jep</artifactId>
+      <version>4.0.0</version>
+    </dependency>
   </dependencies>
 
   <build>
