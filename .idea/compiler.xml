@@ -10,5 +10,8 @@
         <module name="cddabrowser" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="cddabrowser" target="11" />
+    </bytecodeTargetLevel>
   </component>
 </project>
