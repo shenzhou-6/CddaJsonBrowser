@@ -53,8 +53,8 @@ public class HttpUtil {
   public static Future<Buffer> request(Vertx vertx, RequestOptions requestOptions, int replyCount) {
     final HttpClient client = vertx.createHttpClient();
     return client.request(
-        requestOptions
-      )
+      requestOptions
+    )
       .compose(HttpClientRequest::send)
       .compose(HttpClientResponse::body)
       .onSuccess(buffer -> logger.info("request {} is success", requestOptions.getURI()))
@@ -62,7 +62,8 @@ public class HttpUtil {
         if (replyCount < 10) {
           logger.warn("Request reply:\n" +
             "\treply count is {}\n" +
-            "\turl: {}", replyCount, requestOptions.getURI());
+            "\turl: {}\n" +
+            "\tmessage: {}", replyCount, requestOptions.getURI(), throwable.getMessage());
           return request(vertx, requestOptions, replyCount + 1);
         } else {
           return Future.failedFuture(throwable);

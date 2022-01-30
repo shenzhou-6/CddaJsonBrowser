@@ -21,7 +21,7 @@ class HttpUtilTest {
         .setSsl(true)
         .putHeader("User-Agent", "cdda-browser-test"))
       .onComplete(testContext.succeeding(buffer -> {
-        assertThat(buffer.toString()).startsWith("<!DOCTYPE html><!--STATUS OK-->");
+        assertThat(buffer.toString()).startsWith("<!DOCTYPE html>");
         testContext.completeNow();
       }));
   }

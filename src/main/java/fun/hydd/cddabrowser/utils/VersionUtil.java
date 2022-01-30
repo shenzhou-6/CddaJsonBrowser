@@ -1,9 +1,13 @@
 package fun.hydd.cddabrowser.utils;
 
+import fun.hydd.cddabrowser.Constants;
 import fun.hydd.cddabrowser.MainVerticle;
+import fun.hydd.cddabrowser.entity.NewVersion;
+import fun.hydd.cddabrowser.entity.Release;
 import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.RequestOptions;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
@@ -23,12 +27,32 @@ public class VersionUtil {
   private VersionUtil() {
   }
 
+  public static Future<Release> getReleaseByTagName(Vertx vertx, String tagName) {
+    String uri = "/repos/" + Constants.USER_CDDA + "/" + Constants.REPOSITORY_CDDA + "/releases/tags/" + tagName;
+    return HttpUtil.request(vertx,
+      new RequestOptions()
+        .setHost(Constants.HOST_API_GITHUB)
+        .setURI(uri)
+        .setMethod(HttpMethod.GET)
+        .setPort(443)
+        .putHeader("User-Agent", MainVerticle.PROJECT_NAME)
+        .setSsl(true)
+    ).compose(buffer -> {
+      JsonObject jsonObject = buffer.toJsonObject();
+      if (jsonObject.isEmpty()) {
+        return Future.failedFuture("fillReleaseInfo(),jsonArray is Empty");
+      }
+      Release release = jsonObject.mapTo(Release.class);
+      return Future.succeededFuture(release);
+    });
+  }
+
   public static Future<Version> catchLatestVersionFromGithub(Vertx vertx) {
     return HttpUtil.request(vertx,
-        new RequestOptions()
-          .setAbsoluteURI(GITHUB_RELEASES_URL)
-          .putHeader("User-Agent", MainVerticle.PROJECT_NAME)
-          .setSsl(true))
+      new RequestOptions()
+        .setAbsoluteURI(GITHUB_RELEASES_URL)
+        .putHeader("User-Agent", MainVerticle.PROJECT_NAME)
+        .setSsl(true))
       .compose(buffer -> {
         final JsonArray jsonArray = buffer.toJsonArray();
         if (jsonArray.isEmpty()) {
