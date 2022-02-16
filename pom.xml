@@ -48,6 +48,11 @@
       <groupId>io.vertx</groupId>
       <artifactId>vertx-mongo-client</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.vertx</groupId>
+      <artifactId>vertx-config</artifactId>
+      <version>4.2.4</version>
+    </dependency>
 
     <dependency>
       <groupId>io.vertx</groupId>
