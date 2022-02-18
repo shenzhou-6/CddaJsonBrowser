@@ -1,3 +1,13 @@
 {
-  "test": "Hello world"
+  "mongo":{
+    "host": "127.0.0.1",
+    "port": 27017
+  },
+  "version": {
+    "name": "Cataclysm-DDA experimental build 2021-11-14-0817",
+    "tag_name": "cdda-experimental-2021-11-14-0817",
+    "target_commitish": "564d632595faa5feb47c7dc9d34a9a5b932e8c08",
+    "branch": 0,
+    "created_at": 1636877859000
+  }
 }

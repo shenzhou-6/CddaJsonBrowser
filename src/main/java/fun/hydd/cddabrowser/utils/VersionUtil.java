@@ -1,8 +1,7 @@
 package fun.hydd.cddabrowser.utils;
 
 import fun.hydd.cddabrowser.Constants;
-import fun.hydd.cddabrowser.MainVerticle;
-import fun.hydd.cddabrowser.entity.NewVersion;
+import fun.hydd.cddabrowser.ProcuessVerticle;
 import fun.hydd.cddabrowser.entity.Release;
 import fun.hydd.cddabrowser.entity.Version;
 import io.vertx.core.Future;
@@ -35,7 +34,7 @@ public class VersionUtil {
         .setURI(uri)
         .setMethod(HttpMethod.GET)
         .setPort(443)
-        .putHeader("User-Agent", MainVerticle.PROJECT_NAME)
+        .putHeader("User-Agent", ProcuessVerticle.PROJECT_NAME)
         .setSsl(true)
     ).compose(buffer -> {
       JsonObject jsonObject = buffer.toJsonObject();
@@ -51,7 +50,7 @@ public class VersionUtil {
     return HttpUtil.request(vertx,
       new RequestOptions()
         .setAbsoluteURI(GITHUB_RELEASES_URL)
-        .putHeader("User-Agent", MainVerticle.PROJECT_NAME)
+        .putHeader("User-Agent", ProcuessVerticle.PROJECT_NAME)
         .setSsl(true))
       .compose(buffer -> {
         final JsonArray jsonArray = buffer.toJsonArray();

@@ -13,10 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class JsonEntryUtil {
@@ -25,23 +22,26 @@ public class JsonEntryUtil {
   static final Logger logger = LoggerFactory.getLogger(JsonEntryUtil.class);
   public static Map<String, JsonEntry> jsonEntryMap = new HashMap<>();
 
-  private JsonEntryUtil() {
+  private MongoClient mongoClient;
+
+  public JsonEntryUtil(MongoClient mongoClient) {
+    this.mongoClient = mongoClient;
   }
 
-  public static Future<List<JsonEntry>> processInheritJsonEntryList(MongoClient mongoClient,
-                                                                    List<JsonEntry> jsonEntryList,
+
+  public Future<List<JsonEntry>> processInheritJsonEntryList(List<JsonEntry> jsonEntryList,
                                                                     List<String> sortedModList) {
     @SuppressWarnings("rawtypes") List<Future> futureList = new ArrayList<>();
     List<JsonEntry> newJsonEntryList = new ArrayList<>();
     for (JsonEntry jsonEntry : jsonEntryList) {
-      futureList.add(processInheritJsonEntry(mongoClient, jsonEntry, sortedModList, jsonEntry.getMod())
+      futureList.add(processInheritJsonEntry(jsonEntry, sortedModList, jsonEntry.getMod())
         .onSuccess(newJsonEntryList::add));
     }
     return CompositeFuture.all(futureList)
       .compose(compositeFuture -> Future.succeededFuture(newJsonEntryList));
   }
 
-  private static Future<JsonEntry> findSuperJsonEntry(MongoClient mongoClient, JsonEntry subJsonEntry,
+  private Future<JsonEntry> findSuperJsonEntry(JsonEntry subJsonEntry,
                                                       List<String> sortedModList, String currentMod,
                                                       JsonEntry superJsonEntry) {
     if (superJsonEntry != null || sortedModList.isEmpty()) {
@@ -66,28 +66,28 @@ public class JsonEntryUtil {
       .put("mod", mod);
     String collectionName = subJsonEntry.getLanguage() + "_" + ("dda".equals(subJsonEntry.getMod()) ? "original" :
       "process");
-    return getCurrentEffectiveJsonEntry(mongoClient, query, collectionName)
+    return getCurrentEffectiveJsonEntry(query, collectionName)
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           return Future.succeededFuture(jsonObject.mapTo(JsonEntry.class));
         }
         return Future.succeededFuture();
       })
-      .compose(jsonEntry1 -> findSuperJsonEntry(mongoClient, subJsonEntry, sortedModList, currentMod, jsonEntry1));
+      .compose(jsonEntry1 -> findSuperJsonEntry(subJsonEntry, sortedModList, currentMod, jsonEntry1));
   }
 
-  public static Future<JsonEntry> processInheritJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry,
+  public Future<JsonEntry> processInheritJsonEntry(JsonEntry jsonEntry,
                                                           List<String> sortedModList, String currentMod) {
     if (jsonEntryMap.containsKey(jsonEntry.getId())) {
       logger.info("in map find {}", jsonEntry.getId());
       return Future.succeededFuture(jsonEntryMap.get(jsonEntry.getId()));
     }
-    return findSuperJsonEntry(mongoClient, jsonEntry, sortedModList, currentMod, null)
+    return findSuperJsonEntry(jsonEntry, sortedModList, currentMod, null)
       .compose(jsonEntry1 -> {
         JsonObject superData = jsonEntry1.getData();
         if (superData.containsKey(JsonUtil.INHERIT_FIELD_COPY_FROM)) {
           logger.info("Start process super inheritJsonEntry {}", jsonEntry1.getId());
-          return processInheritJsonEntry(mongoClient, jsonEntry1, sortedModList, currentMod)
+          return processInheritJsonEntry( jsonEntry1, sortedModList, currentMod)
             .compose(jsonEntry2 -> {
               jsonEntry.setData(processInheritJsonObject(jsonEntry.getData(), jsonEntry2.getData()));
               return Future.succeededFuture(jsonEntry);
@@ -99,8 +99,8 @@ public class JsonEntryUtil {
       .onSuccess(jsonEntry1 -> jsonEntryMap.put(jsonEntry1.getId(), jsonEntry1));
   }
 
-  public static Future<List<String>> getSortedMod(MongoClient mongoClient, String collection) {
-    return getAllModInfoDataJsonObject(mongoClient, collection)
+  public Future<List<String>> getSortedMod(String collection) {
+    return getAllModInfoDataJsonObject(collection)
       .compose(jsonObjectList -> {
         Map<String, List<String>> map = getAllModInfoMap(jsonObjectList);
         List<String> sortKeyList = topologySort(map);
@@ -108,7 +108,7 @@ public class JsonEntryUtil {
       });
   }
 
-  private static Future<List<JsonObject>> getAllModInfoDataJsonObject(MongoClient mongoClient, String collection) {
+  private Future<List<JsonObject>> getAllModInfoDataJsonObject(String collection) {
     JsonObject query = new JsonObject()
       .put("type", "MOD_INFO");
     return mongoClient.find(collection, query)
@@ -211,8 +211,7 @@ public class JsonEntryUtil {
     return superData;
   }
 
-  public static Future<List<JsonObject>> getNeedProcessInheritJsonObjectByMod(MongoClient mongoClient,
-                                                                              String collection,
+  public Future<List<JsonObject>> getNeedProcessInheritJsonObjectByMod(String collection,
                                                                               Version version,
                                                                               String mod) {
     JsonObject query = new JsonObject()
@@ -221,7 +220,7 @@ public class JsonEntryUtil {
     return mongoClient.find(collection, query);
   }
 
-  public static Future<List<String>> getAllOriginalCollection(MongoClient mongoClient) {
+  public Future<List<String>> getAllOriginalCollection() {
     return mongoClient.getCollections()
       .compose(strings ->
         Future.succeededFuture(
@@ -230,8 +229,7 @@ public class JsonEntryUtil {
       );
   }
 
-  public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryListByJsonObjectList(MongoClient mongoClient,
-                                                                                                 String language,
+  public Future<Map<String, List<BulkOperation>>> processNewJsonEntryListByJsonObjectList(String language,
                                                                                                  Version version,
                                                                                                  String path,
                                                                                                  List<JsonObject> jsonObjectList) {
@@ -239,22 +237,21 @@ public class JsonEntryUtil {
     for (JsonObject jsonObject : jsonObjectList) {
       jsonEntryList.add(new JsonEntry(jsonObject, language, version, path));
     }
-    return processNewJsonEntryList(mongoClient, jsonEntryList);
+    return processNewJsonEntryList(jsonEntryList);
   }
 
-  public static Future<Map<String, List<BulkOperation>>> processNewJsonEntryList(MongoClient mongoClient,
-                                                                                 List<JsonEntry> jsonEntryList) {
+  public Future<Map<String, List<BulkOperation>>> processNewJsonEntryList(List<JsonEntry> jsonEntryList) {
     Map<String, List<BulkOperation>> bulkOperationListMap = new HashMap<>();
     //noinspection rawtypes
     List<Future> futureList = new ArrayList<>();
     for (JsonEntry jsonEntry : jsonEntryList) {
-      futureList.add(processNewJsonEntry(mongoClient, jsonEntry)
+      futureList.add(processNewJsonEntry(jsonEntry)
         .onSuccess(bulkOperation -> {
           final String collectionName = jsonEntry.getCollectionName();
           if (bulkOperationListMap.containsKey(collectionName)) {
             bulkOperationListMap.get(collectionName).add(bulkOperation);
           } else {
-            bulkOperationListMap.put(collectionName, new ArrayList<>(List.of(bulkOperation)));
+            bulkOperationListMap.put(collectionName, Collections.singletonList(bulkOperation));
           }
         }));
     }
@@ -262,14 +259,14 @@ public class JsonEntryUtil {
       .compose(compositeFuture -> Future.succeededFuture(bulkOperationListMap));
   }
 
-  public static Future<BulkOperation> processNewJsonEntry(MongoClient mongoClient, JsonEntry jsonEntry) {
-    return judgeCurrentEffectiveVersionJsonEntry(mongoClient, null, jsonEntry)
-      .compose(bulkOperation -> judgeAfterVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry))
-      .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(mongoClient, bulkOperation, jsonEntry))
+  public Future<BulkOperation> processNewJsonEntry(JsonEntry jsonEntry) {
+    return judgeCurrentEffectiveVersionJsonEntry(null, jsonEntry)
+      .compose(bulkOperation -> judgeAfterVersionVersionJsonEntry(bulkOperation, jsonEntry))
+      .compose(bulkOperation -> judgeBeforeVersionVersionJsonEntry(bulkOperation, jsonEntry))
       .compose(bulkOperation -> judgeIsNewJsonEntry(bulkOperation, jsonEntry));
   }
 
-  public static Future<JsonObject> getCurrentEffectiveJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+  public Future<JsonObject> getCurrentEffectiveJsonEntry(JsonObject queryCondition,
                                                                 String collection) {
     final FindOptions findOptions = new FindOptions()
       .setSort(new JsonObject().put(START_VERSION_CREATED_AT, -1))
@@ -285,7 +282,7 @@ public class JsonEntryUtil {
       });
   }
 
-  public static Future<JsonObject> getAfterJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+  public Future<JsonObject> getAfterJsonEntry(JsonObject queryCondition,
                                                      String collection) {
     final FindOptions findOptions = new FindOptions()
       .setSort(new JsonObject().put(START_VERSION_CREATED_AT, 1))
@@ -301,7 +298,7 @@ public class JsonEntryUtil {
       });
   }
 
-  public static Future<JsonObject> getBeforeJsonEntry(MongoClient mongoClient, JsonObject queryCondition,
+  public Future<JsonObject> getBeforeJsonEntry(JsonObject queryCondition,
                                                       String collection) {
     final FindOptions findOptions = new FindOptions()
       .setSort(new JsonObject().put(END_VERSION_CREATED_AT, -1))
@@ -317,14 +314,13 @@ public class JsonEntryUtil {
       });
   }
 
-  public static Future<BulkOperation> judgeCurrentEffectiveVersionJsonEntry(MongoClient mongoClient,
-                                                                            BulkOperation bulkOperation,
+  public Future<BulkOperation> judgeCurrentEffectiveVersionJsonEntry(BulkOperation bulkOperation,
                                                                             JsonEntry jsonEntry) {
     if (bulkOperation != null) {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateCurrentEffectiveVersionJsonEntryQuery(jsonEntry);
-    return getCurrentEffectiveJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
+    return getCurrentEffectiveJsonEntry(queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
@@ -338,14 +334,13 @@ public class JsonEntryUtil {
       });
   }
 
-  public static Future<BulkOperation> judgeAfterVersionVersionJsonEntry(MongoClient mongoClient,
-                                                                        BulkOperation bulkOperation,
+  public Future<BulkOperation> judgeAfterVersionVersionJsonEntry(BulkOperation bulkOperation,
                                                                         JsonEntry jsonEntry) {
     if (bulkOperation != null) {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateAfterVersionJsonEntryQuery(jsonEntry);
-    return getAfterJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
+    return getAfterJsonEntry(queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
@@ -360,14 +355,13 @@ public class JsonEntryUtil {
       });
   }
 
-  public static Future<BulkOperation> judgeBeforeVersionVersionJsonEntry(MongoClient mongoClient,
-                                                                         BulkOperation bulkOperation,
+  public Future<BulkOperation> judgeBeforeVersionVersionJsonEntry(BulkOperation bulkOperation,
                                                                          JsonEntry jsonEntry) {
     if (bulkOperation != null) {
       return Future.succeededFuture(bulkOperation);
     }
     JsonObject queryCondition = generateBeforeVersionJsonEntryQuery(jsonEntry);
-    return getBeforeJsonEntry(mongoClient, queryCondition, jsonEntry.getCollectionName())
+    return getBeforeJsonEntry(queryCondition, jsonEntry.getCollectionName())
       .compose(jsonObject -> {
         if (JsonUtil.isNotEmpty(jsonObject)) {
           JsonEntry dbJsonEntry = jsonObject.mapTo(JsonEntry.class);
